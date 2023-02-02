@@ -1,6 +1,13 @@
+mod terrain;
+
+#[macro_use]
+extern crate tracing;
+
 use std::net::SocketAddr;
 
 use rand::Rng;
+use terrain::TerrainPlugin;
+use tracing_subscriber::EnvFilter;
 use valence_new::{
     client::{
         despawn_disconnected_clients,
@@ -15,8 +22,15 @@ const PLAYER_UUID_1: Uuid = Uuid::from_u128(1);
 const PLAYER_UUID_2: Uuid = Uuid::from_u128(2);
 
 pub fn main() {
+    dotenv::dotenv().ok();
+
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+
     App::new()
         .add_plugin(ServerPlugin::new(MyCallbacks).with_connection_mode(ConnectionMode::Offline))
+        .add_plugin(TerrainPlugin)
         .add_startup_system(setup)
         .add_system(init_clients)
         .add_system(update_player_list)
@@ -56,23 +70,9 @@ impl AsyncCallbacks for MyCallbacks {
 }
 
 fn setup(world: &mut World) {
-    let mut instance = world
-        .resource::<Server>()
-        .new_instance(DimensionId::default());
+    info!("Starting minecraft server");
 
-    for z in -5..5 {
-        for x in -5..5 {
-            instance.insert_chunk([x, z], Chunk::default());
-        }
-    }
-
-    for z in -25..25 {
-        for x in -25..25 {
-            instance.set_block_state([x, SPAWN_Y, z], BlockState::LIGHT_GRAY_WOOL);
-        }
-    }
-
-    world.spawn(instance);
+    info!("Creating PlayerList");
 
     let mut player_list = world.resource_mut::<PlayerList>();
 
@@ -80,6 +80,8 @@ fn setup(world: &mut World) {
         PLAYER_UUID_1,
         PlayerListEntry::new().with_display_name(Some("persistent entry with no ping")),
     );
+
+    info!("Minecraft server started")
 }
 
 fn init_clients(
@@ -116,12 +118,7 @@ fn chat_message(
     mut msg: EventReader<ChatMessage>,
 ) {
     while let Some(msg) = msg.iter().next() {
-        let sender;
-
-        {
-            let (client, _) = clients.get(msg.client).unwrap();
-            sender = client;
-        }
+        let sender = clients.get(msg.client).unwrap().0;
 
         let username = match sender.player().get_custom_name() {
             Some(name) => name.clone(),
