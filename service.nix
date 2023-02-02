@@ -9,6 +9,7 @@ let
   baseDir = "/var/minecraft/valence_playground";
 
   siteEnv = {
+    RUST_LOG = "valence_playground=trace,debug"
   };
 in {
   ##### interface. here we define the options that users of our service can specify
