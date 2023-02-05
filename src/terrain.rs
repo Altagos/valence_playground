@@ -3,9 +3,7 @@ use bevy::{
     reflect::Reflect,
     render::extract_resource::ExtractResource,
 };
-use bevy_inspector_egui::{
-    inspector_options::std_options::NumberDisplay, prelude::*,
-};
+use bevy_inspector_egui::{inspector_options::std_options::NumberDisplay, prelude::*};
 use noise::{NoiseFn, SuperSimplex};
 use spinners::{Spinner, Spinners};
 use valence_new::{
@@ -13,7 +11,7 @@ use valence_new::{
     prelude::{App, BlockState, Chunk, DimensionId, Instance},
     server::Server,
 };
-use vek::Lerp;
+use vek::{num_traits::ToPrimitive, Lerp};
 
 use crate::SPAWN_Y;
 
@@ -82,6 +80,8 @@ impl Default for TerrainGenerator {
 }
 
 impl TerrainGenerator {
+    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_sign_loss)]
     pub fn gen(&self, instance: &mut Instance) {
         let mut sp = Spinner::new(Spinners::Noise, "Creating world".into());
 
@@ -93,8 +93,8 @@ impl TerrainGenerator {
 
         for z in -500..500 {
             for x in -500..500 {
-                let y = (10.0 * (0.01 * x as f64).sin() + 5.0 * (0.03 * z as f64).cos()).round()
-                    as i32
+                let y = (10.0 * (0.01 * f64::from(x)).sin() + 5.0 * (0.03 * f64::from(z)).cos())
+                    .round() as i32
                     + SPAWN_Y;
 
                 let hilly = Lerp::lerp_unclamped(
@@ -102,7 +102,7 @@ impl TerrainGenerator {
                     0.9,
                     noise01(
                         &self.noise.hilly_noise,
-                        [x, y, z].map(|a| a as f64 / self.settings.noise_scaling),
+                        [x, y, z].map(|a| f64::from(a) / self.settings.noise_scaling),
                     )
                     .powi(self.settings.powi.into()),
                 );
@@ -119,7 +119,7 @@ impl TerrainGenerator {
 
                     // println!("{noise_value}");
 
-                    let block = match noise_value.floor() as u64 {
+                    let block = match noise_value.floor() as u32 {
                         0 => BlockState::BLACKSTONE,
                         1 => BlockState::NETHERITE_BLOCK,
                         2 => BlockState::BASALT,

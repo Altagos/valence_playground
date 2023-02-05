@@ -1,4 +1,6 @@
 #![warn(clippy::pedantic)]
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::needless_pass_by_value)]
 
 mod gui;
 mod terrain;
@@ -106,7 +108,7 @@ fn init_clients(
     let instance = instances.get_single().unwrap();
 
     for mut client in &mut clients {
-        client.set_position([0.0, SPAWN_Y as f64 + 1.0, 0.0]);
+        client.set_position([0.0, f64::from(SPAWN_Y) + 1.0, 0.0]);
         client.set_instance(instance);
         client.set_game_mode(GameMode::Spectator);
 
