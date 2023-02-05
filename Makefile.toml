@@ -1,6 +1,7 @@
-#!/usr/bin/env bash
-
+[tasks.nixos_build]
+script = '''
 sudo systemctl stop valence_playground.service
 cargo build --release
 cp target/release/valence_playground bin/valence_playground
 sudo systemctl start valence_playground.service
+'''
