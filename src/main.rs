@@ -1,3 +1,4 @@
+mod gui;
 mod terrain;
 
 #[macro_use]
@@ -5,15 +6,20 @@ extern crate tracing;
 
 use std::net::SocketAddr;
 
+use bevy::{
+    prelude::{Camera3dBundle, Transform, Vec3},
+    DefaultPlugins,
+};
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use gui::GuiPlugin;
 use rand::Rng;
 use terrain::TerrainPlugin;
-use tracing_subscriber::EnvFilter;
 use valence_new::{
     client::{
         despawn_disconnected_clients,
         event::{default_event_handler, ChatMessage},
     },
-    player_list::{remove_disconnected_clients_from_player_list, Entry},
+    player_list::Entry,
     prelude::*,
 };
 
@@ -24,19 +30,22 @@ const PLAYER_UUID_2: Uuid = Uuid::from_u128(2);
 pub fn main() {
     dotenv::dotenv().ok();
 
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
-
     App::new()
-        .add_plugin(ServerPlugin::new(MyCallbacks).with_connection_mode(ConnectionMode::Offline))
+        .add_plugin(
+            ServerPlugin::new(MyCallbacks).with_connection_mode(ConnectionMode::Online {
+                prevent_proxy_connections: false,
+            }),
+        )
         .add_plugin(TerrainPlugin)
+        .add_plugin(GuiPlugin)
+        // .add_plugin(WorldInspectorPlugin)
         .add_startup_system(setup)
+        .add_startup_system(setup_camera)
         .add_system(init_clients)
         .add_system(update_player_list)
         .add_system(default_event_handler)
         .add_system(despawn_disconnected_clients)
-        .add_system(remove_disconnected_clients_from_player_list)
+        // .add_system(remove_disconnected_clients_from_player_list)
         .add_system(chat_message)
         .run();
 }
@@ -81,7 +90,14 @@ fn setup(world: &mut World) {
         PlayerListEntry::new().with_display_name(Some("persistent entry with no ping")),
     );
 
-    info!("Minecraft server started")
+    info!("Minecraft server started");
+}
+
+fn setup_camera(mut commands: Commands) {
+    commands.spawn(Camera3dBundle {
+        transform: Transform::from_xyz(-2.0, 2.5, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
+        ..Default::default()
+    });
 }
 
 fn init_clients(
@@ -94,7 +110,7 @@ fn init_clients(
     for mut client in &mut clients {
         client.set_position([0.0, SPAWN_Y as f64 + 1.0, 0.0]);
         client.set_instance(instance);
-        client.set_game_mode(GameMode::Creative);
+        client.set_game_mode(GameMode::Spectator);
 
         client.send_message(
             "Please open your player list (tab key)."
