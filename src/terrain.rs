@@ -1,10 +1,10 @@
 use bevy::{
-    prelude::{Query, ReflectResource, Res, ResMut, Resource, StartupStage, World},
+    prelude::{Query, ReflectResource, ResMut, Resource, World},
     reflect::Reflect,
     render::extract_resource::ExtractResource,
 };
 use bevy_inspector_egui::{
-    inspector_options::std_options::NumberDisplay, prelude::*, quick::ResourceInspectorPlugin,
+    inspector_options::std_options::NumberDisplay, prelude::*,
 };
 use noise::{NoiseFn, SuperSimplex};
 use spinners::{Spinner, Spinners};
@@ -141,7 +141,7 @@ impl TerrainGenerator {
         instance.optimize();
 
         sp.stop();
-        println!("");
+        println!();
     }
 }
 

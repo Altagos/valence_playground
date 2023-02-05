@@ -1,3 +1,5 @@
+#![warn(clippy::pedantic)]
+
 mod gui;
 mod terrain;
 
@@ -6,11 +8,7 @@ extern crate tracing;
 
 use std::net::SocketAddr;
 
-use bevy::{
-    prelude::{Camera3dBundle, Transform, Vec3},
-    DefaultPlugins,
-};
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use bevy::prelude::{Camera3dBundle, Transform, Vec3};
 use gui::GuiPlugin;
 use rand::Rng;
 use terrain::TerrainPlugin;

@@ -1,14 +1,12 @@
 use bevy::prelude::*;
 use bevy_inspector_egui::{
-    bevy_egui::{self, EguiPlugin},
-    bevy_inspector::{self, by_type_id},
+    bevy_egui::{self},
+    bevy_inspector::{self},
     egui,
-    reflect_inspector::{Context, InspectorUi},
-    restricted_world_view::RestrictedWorldView,
     DefaultInspectorConfigPlugin,
 };
 
-use crate::terrain::{TerrainGenerator, TerrainSettings};
+use crate::terrain::{TerrainSettings};
 
 pub struct InspectorPlugin;
 
