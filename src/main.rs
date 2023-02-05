@@ -8,10 +8,11 @@ mod terrain;
 #[macro_use]
 extern crate tracing;
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Mutex};
 
 use bevy::prelude::{Camera3dBundle, Transform, Vec3};
 use gui::GuiPlugin;
+use lazy_static::lazy_static;
 use rand::Rng;
 use terrain::TerrainPlugin;
 use valence_new::{
@@ -26,6 +27,11 @@ use valence_new::{
 const SPAWN_Y: i32 = 64;
 const PLAYER_UUID_1: Uuid = Uuid::from_u128(1);
 const PLAYER_UUID_2: Uuid = Uuid::from_u128(2);
+const MAX_CONNECTIONS: usize = 20;
+
+lazy_static! {
+    static ref PLAYER_COUNT: Mutex<usize> = Mutex::new(0);
+}
 
 pub fn main() {
     dotenv::dotenv().ok();
@@ -50,10 +56,13 @@ pub fn main() {
         .run();
 }
 
+#[derive(Default)]
 struct MyCallbacks;
 
 #[async_trait]
 impl AsyncCallbacks for MyCallbacks {
+    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_possible_wrap)]
     async fn server_list_ping(
         &self,
         _shared: &SharedServer,
@@ -61,8 +70,8 @@ impl AsyncCallbacks for MyCallbacks {
         _protocol_version: i32,
     ) -> ServerListPing {
         ServerListPing::Respond {
-            online_players: 42,
-            max_players: 420,
+            online_players: *PLAYER_COUNT.lock().unwrap() as i32,
+            max_players: MAX_CONNECTIONS as i32,
             player_sample: vec![PlayerSampleEntry {
                 name: "foobar".into(),
                 id: Uuid::from_u128(12345),
@@ -73,9 +82,15 @@ impl AsyncCallbacks for MyCallbacks {
         }
     }
 
-    // async fn login(&self, _shared: &SharedServer, _info: &NewClientInfo) -> Result<(), Text> {
-    //     return Err("You are not meant to join this example".color(Color::RED));
-    // }
+    async fn login(&self, _shared: &SharedServer, _info: &NewClientInfo) -> Result<(), Text> {
+        // return Err("You are not meant to join this example".color(Color::RED));
+
+        if MAX_CONNECTIONS > *PLAYER_COUNT.lock().unwrap() {
+            *PLAYER_COUNT.lock().unwrap() += 1;
+            return Ok(());
+        }
+        return Err("Server full".color(Color::RED));
+    }
 }
 
 fn setup(world: &mut World) {

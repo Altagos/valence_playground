@@ -11,7 +11,7 @@ use valence_new::{
     prelude::{App, BlockState, Chunk, DimensionId, Instance},
     server::Server,
 };
-use vek::{num_traits::ToPrimitive, Lerp};
+use vek::Lerp;
 
 use crate::SPAWN_Y;
 

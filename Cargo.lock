@@ -3741,6 +3741,7 @@ dependencies = [
  "bevy",
  "bevy-inspector-egui",
  "dotenv",
+ "lazy_static",
  "noise",
  "rand 0.8.5",
  "spinners",

@@ -14,6 +14,7 @@ opt-level = 1
 [dependencies]
 bevy-inspector-egui = "0.17"
 dotenv = "0.15"
+lazy_static = "1"
 noise = "0.8"
 rand = "0.8"
 spinners = "4.1"
