@@ -53,6 +53,7 @@ pub fn main() {
         .add_system(despawn_disconnected_clients)
         // .add_system(remove_disconnected_clients_from_player_list)
         .add_system(chat_message)
+        .add_system(update_player_count)
         .run();
 }
 
@@ -190,6 +191,14 @@ fn update_player_list(mut player_list: ResMut<PlayerList>, server: Res<Server>) 
 
                 ve.insert(entry);
             }
+        }
+    }
+}
+
+fn update_player_count(clients: Query<(Entity, &Client)>) {
+    for (_entity, client) in &clients {
+        if client.is_disconnected() {
+            *PLAYER_COUNT.lock().unwrap() -= 1;
         }
     }
 }
