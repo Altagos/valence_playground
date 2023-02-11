@@ -1,12 +1,12 @@
 use bevy::{
-    prelude::{Query, ReflectResource, ResMut, Resource, World},
+    prelude::{Local, Query, ReflectResource, ResMut, Resource, World},
     reflect::Reflect,
     render::extract_resource::ExtractResource,
 };
 use bevy_inspector_egui::{inspector_options::std_options::NumberDisplay, prelude::*};
 use noise::{NoiseFn, SuperSimplex};
 use spinners::{Spinner, Spinners};
-use valence_new::{
+use valence::{
     bevy_app::Plugin,
     prelude::{App, BlockState, Chunk, DimensionId, Instance},
     server::Server,
@@ -23,6 +23,7 @@ pub struct TerrainSettings {
     pub noise_scaling: f64,
     #[inspector(display = NumberDisplay::Slider)]
     pub powi: u8,
+    pub num_chunks: u16,
     #[reflect(ignore)]
     pub update: bool,
 }
@@ -35,6 +36,7 @@ impl Default for TerrainSettings {
             seed,
             noise_scaling: 260.0,
             powi: 2,
+            num_chunks: 20,
             update: false,
         }
     }
@@ -85,14 +87,30 @@ impl TerrainGenerator {
     pub fn gen(&self, instance: &mut Instance) {
         let mut sp = Spinner::new(Spinners::Noise, "Creating world".into());
 
-        for z in -100..100 {
-            for x in -100..100 {
+        // instance.clear_chunks();
+
+        let num_chunks = self.settings.num_chunks as i32;
+        let mut remove_chunks = vec![];
+
+        instance.chunks_mut().for_each(|(pos, _)| {
+            if pos.x > num_chunks || pos.z > num_chunks {
+                remove_chunks.push(pos);
+            }
+        });
+
+        remove_chunks.iter().for_each(|pos| {
+            instance.remove_chunk([pos.x, pos.z]);
+        });
+
+        for z in -num_chunks..num_chunks {
+            for x in -num_chunks..num_chunks {
                 instance.insert_chunk([x, z], Chunk::default());
             }
         }
 
-        for z in -500..500 {
-            for x in -500..500 {
+        let num_blocks = num_chunks * 16;
+        for z in -num_blocks..num_blocks {
+            for x in -num_blocks..num_blocks {
                 let y = (10.0 * (0.01 * f64::from(x)).sin() + 5.0 * (0.03 * f64::from(z)).cos())
                     .round() as i32
                     + SPAWN_Y;
@@ -141,7 +159,7 @@ impl TerrainGenerator {
         instance.optimize();
 
         sp.stop();
-        println!();
+        println!("\nWorld created");
     }
 }
 

@@ -5,3 +5,11 @@ cargo build --release
 cp target/release/valence_playground bin/valence_playground
 sudo systemctl start valence_playground.service
 '''
+
+[tasks.r]
+command = "cargo"
+args = ["run"]
+
+[tasks.gui]
+command = "cargo"
+args = ["run", "--features", "gui"]
