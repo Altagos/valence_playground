@@ -17,7 +17,10 @@ use std::{
     time::SystemTime,
 };
 
-use bevy::prelude::{Camera3dBundle, Transform, Vec3};
+use bevy::{
+    prelude::{Camera3dBundle, Transform, Vec3},
+    tasks::AsyncComputeTaskPool,
+};
 use chat::ChatPlugin;
 use flume::{Receiver, Sender};
 use gui::GuiPlugin;
@@ -39,11 +42,11 @@ const SPAWN_Y: i32 = 64;
 const PLAYER_UUID_1: Uuid = Uuid::from_u128(1);
 const PLAYER_UUID_2: Uuid = Uuid::from_u128(2);
 const MAX_CONNECTIONS: usize = 20;
-const SPAWN_POS: DVec3 = DVec3::new(0.0, 200.0, 0.0);
 const SECTION_COUNT: usize = 24;
 
 lazy_static! {
     static ref PLAYER_COUNT: Mutex<usize> = Mutex::new(0);
+    static ref SPAWN_POS: DVec3 = DVec3::new(0.0, 200.0, 0.0);
 }
 
 struct ChunkWorkerState {
@@ -89,8 +92,8 @@ pub fn main() {
         .add_system_to_stage(EventLoop, digging_survival_mode)
         .add_system_to_stage(EventLoop, place_blocks)
         .add_system_set(PlayerList::default_system_set())
-        .add_startup_system(setup)
         .add_startup_system(setup_camera)
+        .add_startup_system(setup)
         .add_system(init_clients)
         .add_system(update_player_list)
         .add_system(remove_unviewed_chunks.after(init_clients))
@@ -137,13 +140,7 @@ impl AsyncCallbacks for MyCallbacks {
 fn setup(world: &mut World) {
     info!("Starting minecraft server...");
 
-    let seconds_per_day = 86_400;
-
-    let seed = (SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-        / seconds_per_day) as u32;
+    let seed = rand::random();
 
     info!("current seed: {seed}");
 
@@ -202,10 +199,11 @@ fn init_clients(
     let instance = instances.get_single().unwrap();
 
     for mut client in &mut clients {
-        client.set_position([0.0, f64::from(SPAWN_Y) + 1.0, 0.0]);
+        client.set_position([SPAWN_POS.x, SPAWN_POS.y, SPAWN_POS.z]);
         client.set_instance(instance);
         client.set_game_mode(GameMode::Creative);
         client.set_op_level(2);
+        client.set_view_distance(20);
 
         client.send_message(
             "Please open your player list (tab key)."
@@ -472,7 +470,7 @@ fn chunk_worker(state: Arc<ChunkWorkerState>) {
 
                 // Fill in the terrain column.
                 for y in (0..chunk.section_count() as i32 * 16).rev() {
-                    const WATER_HEIGHT: i32 = 55;
+                    const WATER_HEIGHT: i32 = 120;
 
                     let p = DVec3::new(x as f64, y as f64, z as f64);
 
@@ -554,7 +552,7 @@ fn chunk_worker(state: Arc<ChunkWorkerState>) {
 fn has_terrain_at(state: &ChunkWorkerState, p: DVec3) -> bool {
     let hilly = lerp(0.1, 1.0, noise01(&state.hilly, p / 400.0)).powi(2);
 
-    let lower = 15.0 + 100.0 * hilly;
+    let lower = 64.0 + 100.0 * hilly;
     let upper = lower + 100.0 * hilly;
 
     if p.y <= lower {
