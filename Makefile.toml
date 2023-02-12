@@ -1,7 +1,7 @@
 [tasks.nixos_build]
 script = '''
 sudo systemctl stop valence_playground.service
-cargo build --release
+cargo build --release --no-default-features --features minecraft
 cp target/release/valence_playground bin/valence_playground
 sudo systemctl start valence_playground.service
 '''
@@ -10,6 +10,6 @@ sudo systemctl start valence_playground.service
 command = "cargo"
 args = ["run"]
 
-[tasks.gui]
+[tasks.no_gui]
 command = "cargo"
-args = ["run", "--features", "gui"]
+args = ["run", "--no-default-features", "--features", "minecraft"]
