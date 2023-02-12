@@ -1,6 +1,10 @@
 use bevy::prelude::{Plugin, Query};
 use bevy_inspector_egui::{bevy_egui, egui};
-use valence::{ prelude::*, server::EventLoop, client::event::{ChatMessage, ChatCommand}};
+use valence::{
+    client::event::{ChatCommand, ChatMessage},
+    prelude::*,
+    server::EventLoop,
+};
 
 pub enum Message {
     ChatMessage(ChatMessage),
@@ -82,22 +86,35 @@ fn interpret_command(mut clients: Query<&mut Client>, mut events: EventReader<Ch
     }
 }
 
-#[allow(dead_code)]
 pub fn gui_chat_window(
     mut egui_context: ResMut<bevy_egui::EguiContext>,
     mut messages: ResMut<ChatMessages>,
     mut send_message_content: Local<String>,
     mut clients: Query<(&mut Client, Option<&mut McEntity>)>,
+    mut display_messages: Local<Vec<(String, String)>>,
 ) {
-    let egui_context = egui_context
-        .ctx_mut()
-        .clone();
+    let egui_context = egui_context.ctx_mut().clone();
+
+    messages.0.iter().for_each(|m| match m {
+        Message::ChatMessage(m) => {
+            let Ok(sender) = clients.get_component::<Client>(m.client) else {return;};
+
+            let username = match sender.player().get_custom_name() {
+                Some(name) => name.to_string(),
+                None => sender.username().to_string(),
+            };
+            display_messages.push((username, m.message.to_string()));
+        }
+        Message::ServerMessage(msg) => {
+            display_messages.push(("Server".to_string(), msg.to_string()))
+        }
+    });
+
+    messages.0.clear();
 
     egui::Window::new("Chat")
         .resizable(true)
         .collapsible(true)
-        // .hscroll(true)
-        // .vscroll(true)
         .show(&egui_context, |ui| {
             ui.horizontal(|row| {
                 row.label("Total amount of messages:");
@@ -112,11 +129,11 @@ pub fn gui_chat_window(
                 let button = row.button("Send");
 
                 if row.input().key_pressed(egui::Key::Enter) || button.clicked() {
-                    let text = "[Server]: ".color(Color::GRAY) + send_message_content.clone();
+                    let text = send_message_content.clone();
 
                     for (mut c, _) in clients.iter_mut() {
-                        c.send_message(text.clone());
-                        messages.add(Message::ServerMessage(text.clone()));
+                        c.send_message("[Server]: ".color(Color::GRAY) + text.clone());
+                        messages.add(Message::ServerMessage(text.clone().into()));
                     }
 
                     *send_message_content = String::new();
@@ -125,24 +142,10 @@ pub fn gui_chat_window(
 
             ui.group(|group| {
                 egui::ScrollArea::vertical().show(group, |g| {
-                    messages.0.iter().for_each(|item| {
+                    display_messages.iter().for_each(|(from, msg)| {
                         g.horizontal(|row| {
-                            match item {
-                                Message::ChatMessage(item) => {
-                                    let Ok(sender) = clients.get_component::<Client>(item.client) else {return;};
-
-                                    let username = match sender.player().get_custom_name() {
-                                        Some(name) => name.clone(),
-                                        None => Text::from(sender.username().to_string()),
-                                    };
-
-                                    row.label(format!("[{username}]"));
-                                    row.label(item.message.to_string());
-                                },
-                                Message::ServerMessage(message) => {row.label(message.to_string());},
-                            };
-                        
-                            
+                            row.label(format!("[{from}]"));
+                            row.label(msg);
                         });
                     });
                 });
