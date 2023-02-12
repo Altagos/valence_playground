@@ -22,7 +22,7 @@ rayon = "1.6"
 spinners = "4.1"
 tracing = "0.1"
 tracing-subscriber = "0.3"
-valence = { git = "https://github.com/valence-rs/valence", branch = "ecs_rewrite" }
+valence = { git = "https://github.com/valence-rs/valence", branch = "main" }
 vek = "0.15"
 
 [dependencies.bevy]
@@ -31,5 +31,6 @@ default-features = false
 features = ["bevy_asset", "bevy_gltf", "bevy_scene", "bevy_winit", "render", "png", "hdr", "x11"]
 
 [features]
-default = []
+default = [ "minecraft", "gui" ]
+minecraft = []
 gui = []

@@ -114,7 +114,7 @@ impl AsyncCallbacks for MyCallbacks {
     async fn server_list_ping(
         &self,
         _shared: &SharedServer,
-        remote_addr: SocketAddr,
+        _remote_addr: SocketAddr,
         _protocol_version: i32,
     ) -> ServerListPing {
         ServerListPing::Respond {

@@ -2,11 +2,10 @@ use bevy::prelude::*;
 use bevy_inspector_egui::{
     bevy_egui::{self},
     bevy_inspector::{self},
-    egui,
-    DefaultInspectorConfigPlugin,
+    egui, DefaultInspectorConfigPlugin,
 };
 
-use crate::terrain::{TerrainSettings};
+use crate::terrain::TerrainSettings;
 
 pub struct InspectorPlugin;
 

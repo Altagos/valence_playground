@@ -3687,7 +3687,7 @@ dependencies = [
 [[package]]
 name = "valence"
 version = "0.2.0+mc1.19.3"
-source = "git+https://github.com/valence-rs/valence?branch=ecs_rewrite#52465783a873982fe6b887f3817b4d7ded9417a9"
+source = "git+https://github.com/valence-rs/valence?branch=main#e1a3e2dc0013796fbfff66a586f65a55d9013b40"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -3728,7 +3728,7 @@ dependencies = [
 [[package]]
 name = "valence_nbt"
 version = "0.5.0"
-source = "git+https://github.com/valence-rs/valence?branch=ecs_rewrite#52465783a873982fe6b887f3817b4d7ded9417a9"
+source = "git+https://github.com/valence-rs/valence?branch=main#e1a3e2dc0013796fbfff66a586f65a55d9013b40"
 dependencies = [
  "byteorder",
  "cesu8",
@@ -3756,7 +3756,7 @@ dependencies = [
 [[package]]
 name = "valence_protocol"
 version = "0.1.0"
-source = "git+https://github.com/valence-rs/valence?branch=ecs_rewrite#52465783a873982fe6b887f3817b4d7ded9417a9"
+source = "git+https://github.com/valence-rs/valence?branch=main#e1a3e2dc0013796fbfff66a586f65a55d9013b40"
 dependencies = [
  "aes",
  "anyhow",
@@ -3780,7 +3780,7 @@ dependencies = [
 [[package]]
 name = "valence_protocol_macros"
 version = "0.1.0"
-source = "git+https://github.com/valence-rs/valence?branch=ecs_rewrite#52465783a873982fe6b887f3817b4d7ded9417a9"
+source = "git+https://github.com/valence-rs/valence?branch=main#e1a3e2dc0013796fbfff66a586f65a55d9013b40"
 dependencies = [
  "proc-macro2",
  "quote",
