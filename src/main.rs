@@ -1,6 +1,10 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::needless_pass_by_value)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_sign_loss)]
 
 mod gui;
 mod minecraft;
@@ -8,32 +12,12 @@ mod minecraft;
 #[macro_use]
 extern crate tracing;
 
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    net::SocketAddr,
-    sync::{Arc, Mutex},
-    thread,
-    time::SystemTime,
-};
+use std::sync::Mutex;
 
-use bevy::{
-    prelude::{Camera3dBundle, Transform, Vec3},
-    tasks::AsyncComputeTaskPool,
-};
-use flume::{Receiver, Sender};
 use gui::GuiPlugin;
 use lazy_static::lazy_static;
 use minecraft::MinecraftPlugin;
-use noise::{NoiseFn, SuperSimplex};
-use rand::Rng;
-use valence::{
-    client::{
-        despawn_disconnected_clients,
-        event::{default_event_handler, ChatCommand, FinishDigging, StartDigging, UseItemOnBlock},
-    },
-    prelude::*,
-    protocol::types::Hand,
-};
+use valence::prelude::*;
 
 pub const SPAWN_Y: i32 = 64;
 pub const PLAYER_UUID_1: Uuid = Uuid::from_u128(1);
