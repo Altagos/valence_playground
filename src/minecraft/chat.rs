@@ -1,6 +1,6 @@
 use bevy::prelude::{Plugin, Query};
 use bevy_inspector_egui::{bevy_egui, egui};
-use valence::{ prelude::*, server::EventLoop, client::event::ChatMessage};
+use valence::{ prelude::*, server::EventLoop, client::event::{ChatMessage, ChatCommand}};
 
 pub enum Message {
     ChatMessage(ChatMessage),
@@ -19,7 +19,8 @@ pub struct ChatPlugin;
 impl Plugin for ChatPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         app.insert_resource(ChatMessages::default())
-            .add_system_to_stage(EventLoop, chat_message);
+            .add_system_to_stage(EventLoop, chat_message)
+            .add_system_to_stage(EventLoop, interpret_command);
     }
 }
 
@@ -43,6 +44,41 @@ fn chat_message(
         }
 
         messages.add(Message::ChatMessage(event.clone()));
+    }
+}
+
+fn interpret_command(mut clients: Query<&mut Client>, mut events: EventReader<ChatCommand>) {
+    for event in events.iter() {
+        let Ok(mut client) = clients.get_component_mut::<Client>(event.client) else {
+            continue;
+        };
+
+        let mut args = event.command.split_whitespace();
+        let command = args.next().unwrap_or_default();
+
+        if command == "gamemode" {
+            if client.op_level() < 2 {
+                // not enough permissions to use gamemode command
+                client.send_message("Not enough permissions to use gamemode command.".italic());
+                continue;
+            }
+
+            let mode = args.next().unwrap_or_default();
+            let mode = match mode {
+                "adventure" => GameMode::Adventure,
+                "creative" => GameMode::Creative,
+                "survival" => GameMode::Survival,
+                "spectator" => GameMode::Spectator,
+                _ => {
+                    client.send_message("Invalid gamemode.".italic());
+                    continue;
+                }
+            };
+            client.set_game_mode(mode);
+            client.send_message(format!("Set gamemode to {mode:?}.").italic());
+        } else {
+            client.send_message("Invalid command.".italic());
+        }
     }
 }
 
