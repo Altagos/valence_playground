@@ -1,5 +1,6 @@
 [tasks.nixos_build]
 script = '''
+git pull
 sudo systemctl stop valence_playground.service
 cargo build --release --no-default-features --features minecraft,online
 cp target/release/valence_playground bin/valence_playground
