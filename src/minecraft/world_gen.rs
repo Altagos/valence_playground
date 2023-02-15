@@ -2,6 +2,7 @@ use std::{
     collections::{hash_map::Entry, HashMap},
     sync::Arc,
     thread,
+    time::Instant,
 };
 
 use bevy::prelude::{Query, ResMut, Resource, World};
@@ -23,7 +24,7 @@ struct ChunkWorkerState {
 }
 
 #[derive(Resource)]
-struct GameState {
+struct WorldGenState {
     /// Chunks that need to be generated. Chunks without a priority have already
     /// been sent to the thread pool.
     pending: HashMap<ChunkPos, Option<Priority>>,
@@ -35,9 +36,9 @@ struct GameState {
 /// values are sent first.
 type Priority = u64;
 
-pub struct TerrainPlugin;
+pub struct WorldGenPlugin;
 
-impl Plugin for TerrainPlugin {
+impl Plugin for WorldGenPlugin {
     fn build(&self, app: &mut App) {
         app.add_startup_system(setup)
             .add_system(remove_unviewed_chunks.after(VPSystems::InitClients))
@@ -47,11 +48,11 @@ impl Plugin for TerrainPlugin {
 }
 
 fn setup(world: &mut World) {
-    info!("Starting world generation...");
+    info!(target: "minecraft::world_gen", "Starting world generation...");
 
     let seed = rand::random();
 
-    info!("current seed: {seed}");
+    info!(target: "minecraft::world_gen", "Current seed: {seed}");
 
     let (finished_sender, finished_receiver) = flume::unbounded();
     let (pending_sender, pending_receiver) = flume::unbounded();
@@ -78,7 +79,7 @@ fn setup(world: &mut World) {
         thread::spawn(move || chunk_worker(state));
     }
 
-    world.insert_resource(GameState {
+    world.insert_resource(WorldGenState {
         pending: HashMap::new(),
         sender: pending_sender,
         receiver: finished_receiver,
@@ -90,7 +91,7 @@ fn setup(world: &mut World) {
 
     world.spawn(instance);
 
-    info!("World generation started");
+    info!(target: "minecraft::world_gen", "World generation started");
 }
 
 fn remove_unviewed_chunks(mut instances: Query<&mut Instance>) {
@@ -102,7 +103,7 @@ fn remove_unviewed_chunks(mut instances: Query<&mut Instance>) {
 fn update_client_views(
     mut instances: Query<&mut Instance>,
     mut clients: Query<&mut Client>,
-    mut state: ResMut<GameState>,
+    mut state: ResMut<WorldGenState>,
 ) {
     let instance = instances.single_mut();
 
@@ -137,7 +138,7 @@ fn update_client_views(
     }
 }
 
-fn send_recv_chunks(mut instances: Query<&mut Instance>, state: ResMut<GameState>) {
+fn send_recv_chunks(mut instances: Query<&mut Instance>, state: ResMut<WorldGenState>) {
     let mut instance = instances.single_mut();
     let state = state.into_inner();
 
@@ -168,93 +169,99 @@ fn send_recv_chunks(mut instances: Query<&mut Instance>, state: ResMut<GameState
 fn chunk_worker(state: Arc<ChunkWorkerState>) {
     while let Ok(pos) = state.receiver.recv() {
         let mut chunk = Chunk::new(SECTION_COUNT);
+        let start = Instant::now();
 
-        for offset_z in 0..16 {
-            for offset_x in 0..16 {
-                let x = offset_x as i32 + pos.x * 16;
-                let z = offset_z as i32 + pos.z * 16;
+        gen_chunk(&state, &mut chunk, pos);
 
-                let mut in_terrain = false;
-                let mut depth = 0;
+        let duration = start.elapsed();
+        trace!(target: "minecraft::world_gen","Generated chunk at: {pos:?} ({duration:?})");
 
-                // Fill in the terrain column.
-                for y in (0..chunk.section_count() as i32 * 16).rev() {
-                    const WATER_HEIGHT: i32 = 120;
+        let _ = state.sender.try_send((pos, chunk));
+    }
+}
 
-                    let p = DVec3::new(f64::from(x), f64::from(y), f64::from(z));
+fn gen_chunk(state: &ChunkWorkerState, chunk: &mut Chunk, pos: ChunkPos) {
+    for offset_z in 0..16 {
+        for offset_x in 0..16 {
+            let x = offset_x as i32 + pos.x * 16;
+            let z = offset_z as i32 + pos.z * 16;
 
-                    let block = if has_terrain_at(&state, p) {
-                        let gravel_height = WATER_HEIGHT
-                            - 1
-                            - (fbm(&state.gravel, p / 10.0, 3, 2.0, 0.5) * 6.0).floor() as i32;
+            let mut in_terrain = false;
+            let mut depth = 0;
 
-                        if in_terrain {
-                            if depth > 0 {
-                                depth -= 1;
-                                if y < gravel_height {
-                                    BlockState::GRAVEL
-                                } else {
-                                    BlockState::DIRT
-                                }
-                            } else {
-                                BlockState::STONE
-                            }
-                        } else {
-                            in_terrain = true;
-                            let n = noise01(&state.stone, p / 15.0);
+            // Fill in the terrain column.
+            for y in (0..chunk.section_count() as i32 * 16).rev() {
+                const WATER_HEIGHT: i32 = 120;
 
-                            depth = (n * 5.0).round() as u64;
+                let p = DVec3::new(f64::from(x), f64::from(y), f64::from(z));
 
+                let block = if has_terrain_at(&state, p) {
+                    let gravel_height = WATER_HEIGHT
+                        - 1
+                        - (fbm(&state.gravel, p / 10.0, 3, 2.0, 0.5) * 6.0).floor() as i32;
+
+                    if in_terrain {
+                        if depth > 0 {
+                            depth -= 1;
                             if y < gravel_height {
                                 BlockState::GRAVEL
-                            } else if y < WATER_HEIGHT - 1 {
-                                BlockState::DIRT
                             } else {
-                                BlockState::GRASS_BLOCK
+                                BlockState::DIRT
                             }
+                        } else {
+                            BlockState::STONE
                         }
                     } else {
-                        in_terrain = false;
-                        depth = 0;
-                        if y < WATER_HEIGHT {
-                            BlockState::WATER
+                        in_terrain = true;
+                        let n = noise01(&state.stone, p / 15.0);
+
+                        depth = (n * 5.0).round() as u64;
+
+                        if y < gravel_height {
+                            BlockState::GRAVEL
+                        } else if y < WATER_HEIGHT - 1 {
+                            BlockState::DIRT
                         } else {
-                            BlockState::AIR
+                            BlockState::GRASS_BLOCK
                         }
-                    };
+                    }
+                } else {
+                    in_terrain = false;
+                    depth = 0;
+                    if y < WATER_HEIGHT {
+                        BlockState::WATER
+                    } else {
+                        BlockState::AIR
+                    }
+                };
 
-                    chunk.set_block_state(offset_x, y as usize, offset_z, block);
-                }
+                chunk.set_block_state(offset_x, y as usize, offset_z, block);
+            }
 
-                // Add grass on top of grass blocks.
-                for y in (0..chunk.section_count() * 16).rev() {
-                    if chunk.block_state(offset_x, y, offset_z).is_air()
-                        && chunk.block_state(offset_x, y - 1, offset_z) == BlockState::GRASS_BLOCK
-                    {
-                        let p = DVec3::new(f64::from(x), y as f64, f64::from(z));
-                        let density = fbm(&state.grass, p / 5.0, 4, 2.0, 0.7);
+            // Add grass on top of grass blocks.
+            for y in (0..chunk.section_count() * 16).rev() {
+                if chunk.block_state(offset_x, y, offset_z).is_air()
+                    && chunk.block_state(offset_x, y - 1, offset_z) == BlockState::GRASS_BLOCK
+                {
+                    let p = DVec3::new(f64::from(x), y as f64, f64::from(z));
+                    let density = fbm(&state.grass, p / 5.0, 4, 2.0, 0.7);
 
-                        if density > 0.55 {
-                            if density > 0.7
-                                && chunk.block_state(offset_x, y + 1, offset_z).is_air()
-                            {
-                                let upper =
-                                    BlockState::TALL_GRASS.set(PropName::Half, PropValue::Upper);
-                                let lower =
-                                    BlockState::TALL_GRASS.set(PropName::Half, PropValue::Lower);
+                    if density > 0.55 {
+                        if density > 0.7 && chunk.block_state(offset_x, y + 1, offset_z).is_air() {
+                            let upper =
+                                BlockState::TALL_GRASS.set(PropName::Half, PropValue::Upper);
+                            let lower =
+                                BlockState::TALL_GRASS.set(PropName::Half, PropValue::Lower);
 
-                                chunk.set_block_state(offset_x, y + 1, offset_z, upper);
-                                chunk.set_block_state(offset_x, y, offset_z, lower);
-                            } else {
-                                chunk.set_block_state(offset_x, y, offset_z, BlockState::GRASS);
-                            }
+                            chunk.set_block_state(offset_x, y + 1, offset_z, upper);
+                            chunk.set_block_state(offset_x, y, offset_z, lower);
+                        } else {
+                            chunk.set_block_state(offset_x, y, offset_z, BlockState::GRASS);
                         }
                     }
                 }
             }
         }
-
-        let _ = state.sender.try_send((pos, chunk));
     }
 }
 

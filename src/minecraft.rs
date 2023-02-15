@@ -1,6 +1,6 @@
 pub mod building;
 pub mod chat;
-pub mod terrain;
+pub mod world_gen;
 
 use std::net::SocketAddr;
 
@@ -12,7 +12,7 @@ use valence::{
     prelude::*,
 };
 
-use self::{building::BuildingPlugin, chat::ChatPlugin, terrain::TerrainPlugin};
+use self::{building::BuildingPlugin, chat::ChatPlugin, world_gen::WorldGenPlugin};
 use crate::{VPSystems, MAX_CONNECTIONS, PLAYER_COUNT, PLAYER_UUID_1, PLAYER_UUID_2, SPAWN_POS};
 
 pub struct MinecraftPlugin;
@@ -27,7 +27,7 @@ impl Plugin for MinecraftPlugin {
         ))
         .add_plugin(BuildingPlugin)
         .add_plugin(ChatPlugin)
-        .add_plugin(TerrainPlugin)
+        .add_plugin(WorldGenPlugin)
         .add_system_to_stage(EventLoop, default_event_handler)
         .add_system_set(PlayerList::default_system_set())
         .add_system(init_clients.label(VPSystems::InitClients))

@@ -47,6 +47,8 @@ fn chat_message(
             c.send_message(format!("{username}: {}", event.message));
         }
 
+        info!(target: "minecraft::chat","{username}: {}", event.message);
+
         messages.add(Message::ChatMessage(event.clone()));
     }
 }
@@ -89,8 +91,8 @@ fn interpret_command(mut clients: Query<&mut Client>, mut events: EventReader<Ch
 pub fn gui_chat_window(
     mut egui_context: ResMut<bevy_egui::EguiContext>,
     mut messages: ResMut<ChatMessages>,
-    mut send_message_content: Local<String>,
     mut clients: Query<(&mut Client, Option<&mut McEntity>)>,
+    mut send_message_content: Local<String>,
     mut display_messages: Local<Vec<(String, String)>>,
 ) {
     let egui_context = egui_context.ctx_mut().clone();
