@@ -40,8 +40,9 @@ pub enum VPSystems {
 pub fn main() {
     dotenv::dotenv().ok();
 
+    let path = std::env::var("RUST_LOG_PATH").expect("RUST_LOG_PATH not defined");
     let appender = tracing_appender::rolling::never(
-        "./logs",
+        path,
         format!("{}.log", Local::now().format("%d.%m.%Y_%H:%M:%S")),
     );
     let (non_blocking, _guard) = tracing_appender::non_blocking(appender);

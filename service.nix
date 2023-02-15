@@ -10,6 +10,7 @@ let
 
   siteEnv = {
     RUST_LOG = "valence_playground=trace,minecraft=trace,warn";
+    RUST_LOG_PATH = "/var/minecraft/valence_playground/logs";
   };
 in {
   ##### interface. here we define the options that users of our service can specify
