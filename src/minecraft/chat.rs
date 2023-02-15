@@ -1,4 +1,5 @@
 use bevy::prelude::{Plugin, Query};
+#[allow(unused_imports)]
 use bevy_inspector_egui::{bevy_egui, egui};
 use valence::{
     client::event::{ChatCommand, ChatMessage},
@@ -6,6 +7,7 @@ use valence::{
     server::EventLoop,
 };
 
+#[allow(dead_code)]
 pub enum Message {
     ChatMessage(ChatMessage),
     ServerMessage(Text),
@@ -88,6 +90,7 @@ fn interpret_command(mut clients: Query<&mut Client>, mut events: EventReader<Ch
     }
 }
 
+#[cfg(feature = "gui")]
 pub fn gui_chat_window(
     mut egui_context: ResMut<bevy_egui::EguiContext>,
     mut messages: ResMut<ChatMessages>,
