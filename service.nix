@@ -9,7 +9,7 @@ let
   baseDir = "/var/minecraft/valence_playground";
 
   siteEnv = {
-    RUST_LOG = "valence_playground=trace,minecraft=trace";
+    RUST_LOG = "valence_playground=trace,minecraft=trace,warn";
   };
 in {
   ##### interface. here we define the options that users of our service can specify
@@ -44,7 +44,7 @@ in {
         environment = siteEnv;
         serviceConfig =
           { ExecStart =
-              "RUST_LOG=valence_playground=trace,minecraft=trace,warn ${baseDir}/bin/valence_playground";
+              "${baseDir}/bin/valence_playground";
             User = "valence-playground";
             PermissionsStartOnly = true;
             Restart = "on-failure";
