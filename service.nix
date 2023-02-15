@@ -1,9 +1,8 @@
 { config, lib, pkgs, ... }:
 
-with lib;  # use the functions from lib, such as mkIf
+with lib;
 
 let
-  # the values of the options set for the service by the user of the service
   sitecfg = config.services.valence_playground;
 
   baseDir = "/var/minecraft/valence_playground";
@@ -30,7 +29,7 @@ in {
   ##### implementation
   config = mkIf sitecfg.enable { # only apply the following settings if enabled
     users.extraUsers.valence-playground =
-      { description = "Altagos web server";
+      { description = "Altagos's Minecraft server";
         isNormalUser = true;
         group = "altagos";
         useDefaultShell = true;
