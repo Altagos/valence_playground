@@ -1,12 +1,14 @@
 use std::{
     collections::{hash_map::Entry, HashMap},
-    sync::Arc,
+    num::NonZeroUsize,
+    sync::{Arc, Mutex},
     thread,
     time::Instant,
 };
 
 use bevy::prelude::{Query, ResMut, Resource, World};
 use flume::{Receiver, Sender};
+use lru::LruCache;
 use noise::{NoiseFn, SuperSimplex};
 use valence::{bevy_app::Plugin, prelude::*, server::Server};
 
@@ -15,6 +17,7 @@ use crate::{VPSystems, SECTION_COUNT};
 struct ChunkWorkerState {
     sender: Sender<(ChunkPos, Chunk)>,
     receiver: Receiver<ChunkPos>,
+    cache: LruCache<ChunkPos, Chunk>,
     // Noise functions
     density: SuperSimplex,
     hilly: SuperSimplex,
@@ -57,15 +60,16 @@ fn setup(world: &mut World) {
     let (finished_sender, finished_receiver) = flume::unbounded();
     let (pending_sender, pending_receiver) = flume::unbounded();
 
-    let state = Arc::new(ChunkWorkerState {
+    let state = Arc::new(Mutex::new(ChunkWorkerState {
         sender: finished_sender,
         receiver: pending_receiver,
+        cache: LruCache::new(NonZeroUsize::new(2048).unwrap()),
         density: SuperSimplex::new(seed),
         hilly: SuperSimplex::new(seed.wrapping_add(1)),
         stone: SuperSimplex::new(seed.wrapping_add(2)),
         gravel: SuperSimplex::new(seed.wrapping_add(3)),
         grass: SuperSimplex::new(seed.wrapping_add(4)),
-    });
+    }));
 
     // Chunks are generated in a thread pool for parallelism and to avoid blocking
     // the main tick loop. You can use your thread pool of choice here (rayon,
@@ -166,15 +170,24 @@ fn send_recv_chunks(mut instances: Query<&mut Instance>, state: ResMut<WorldGenS
     }
 }
 
-fn chunk_worker(state: Arc<ChunkWorkerState>) {
+fn chunk_worker(state: Arc<Mutex<ChunkWorkerState>>) {
+    let mut state = state.lock().unwrap();
     while let Ok(pos) = state.receiver.recv() {
         let mut chunk = Chunk::new(SECTION_COUNT);
+        let cached;
         let start = Instant::now();
 
-        gen_chunk(&state, &mut chunk, pos);
+        if state.cache.contains(&pos) {
+            chunk = state.cache.get_mut(&pos).unwrap().to_owned();
+            cached = true;
+        } else {
+            gen_chunk(&state, &mut chunk, pos);
+            state.cache.push(pos, chunk.clone());
+            cached = false;
+        }
 
         let duration = start.elapsed();
-        trace!(target: "minecraft::world_gen","Generated chunk at: {pos:?} ({duration:?})");
+        trace!(target: "minecraft::world_gen", cached = cached,"Generated chunk at: {pos:?} ({duration:?})");
 
         let _ = state.sender.try_send((pos, chunk));
     }

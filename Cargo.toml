@@ -13,10 +13,12 @@ opt-level = 1
 
 [dependencies]
 bevy-inspector-egui = "0.17"
+cfg-if = "1"
 chrono = "0.4.23"
 dotenv = "0.15"
 flume = "0.10.14"
 lazy_static = "1"
+lru = "0.9"
 noise = "0.8"
 rand = "0.8"
 rayon = "1.6"
@@ -33,6 +35,7 @@ default-features = false
 features = ["bevy_asset", "bevy_gltf", "bevy_scene", "bevy_winit", "render", "png", "hdr", "x11"]
 
 [features]
-default = [ "minecraft" ]
+default = [ "minecraft", "online", "gui" ]
 minecraft = []
 gui = []
+online = []

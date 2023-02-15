@@ -20,20 +20,28 @@ pub struct MinecraftPlugin;
 impl Plugin for MinecraftPlugin {
     #[cfg(feature = "minecraft")]
     fn build(&self, app: &mut bevy::prelude::App) {
-        app.add_plugin(ServerPlugin::new(MyCallbacks).with_connection_mode(
-            ConnectionMode::Online {
-                prevent_proxy_connections: false,
-            },
-        ))
-        .add_plugin(BuildingPlugin)
-        .add_plugin(ChatPlugin)
-        .add_plugin(WorldGenPlugin)
-        .add_system_to_stage(EventLoop, default_event_handler)
-        .add_system_set(PlayerList::default_system_set())
-        .add_system(init_clients.label(VPSystems::InitClients))
-        .add_system(update_player_list)
-        .add_system(update_player_count)
-        .add_system(despawn_disconnected_clients);
+        let connection_mode;
+
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "online")] {
+                connection_mode = ConnectionMode::Online {
+                    prevent_proxy_connections: false,
+                }
+            } else {
+                connection_mode = ConnectionMode::Offline
+            }
+        }
+
+        app.add_plugin(ServerPlugin::new(MyCallbacks).with_connection_mode(connection_mode))
+            .add_plugin(BuildingPlugin)
+            .add_plugin(ChatPlugin)
+            .add_plugin(WorldGenPlugin)
+            .add_system_to_stage(EventLoop, default_event_handler)
+            .add_system_set(PlayerList::default_system_set())
+            .add_system(init_clients.label(VPSystems::InitClients))
+            .add_system(update_player_list)
+            .add_system(update_player_count)
+            .add_system(despawn_disconnected_clients);
     }
 
     #[cfg(not(feature = "minecraft"))]
