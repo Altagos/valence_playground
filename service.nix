@@ -47,7 +47,7 @@ in {
           { ExecStart =
               "${baseDir}/bin/valence_playground";
             User = "valence-playground";
-            Restart = "no";
+            Restart = "on-failure";
             WorkingDirectory = baseDir;
           };
       };
