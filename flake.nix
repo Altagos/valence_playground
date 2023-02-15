@@ -23,6 +23,7 @@
             pkg-config
             exa
             fd
+            bat
             cargo-make
             (rust-bin.selectLatestNightlyWith (toolchain: toolchain.default))
           ];
