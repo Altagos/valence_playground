@@ -44,7 +44,7 @@ in {
         environment = siteEnv;
         serviceConfig =
           { ExecStart =
-              "${baseDir}/bin/valence_playground";
+              "RUST_LOG=valence_playground=trace,minecraft=trace,warn ${baseDir}/bin/valence_playground";
             User = "valence-playground";
             PermissionsStartOnly = true;
             Restart = "on-failure";
