@@ -60,7 +60,10 @@ fn init_clients(
         client.set_instance(instance);
         client.set_game_mode(GameMode::Creative);
         client.set_op_level(2);
-        client.set_view_distance(20);
+
+        if client.view_distance() > 20 {
+            client.set_view_distance(20);
+        }
 
         client.send_message(
             "Please open your player list (tab key)."

@@ -9,6 +9,7 @@ use std::{
 use bevy::prelude::{Query, ResMut, Resource, World};
 use flume::{Receiver, Sender};
 use indicatif::{ProgressBar, ProgressStyle};
+use itertools::iproduct;
 use lru::LruCache;
 use noise::{NoiseFn, SuperSimplex};
 use valence::{bevy_app::Plugin, prelude::*, server::Server};
@@ -59,10 +60,8 @@ fn setup(world: &mut World) {
     info!(target: "minecraft::world_gen", "Current seed: {seed}");
 
     let mut num_pregen_chunks = 0;
-    for _x in -22..22 {
-        for _z in -22..22 {
-            num_pregen_chunks += 1;
-        }
+    for (..) in iproduct!(-22..22, -22..22) {
+        num_pregen_chunks += 1;
     }
 
     let (finished_sender, finished_receiver) = flume::unbounded();
@@ -79,6 +78,7 @@ fn setup(world: &mut World) {
         gravel: SuperSimplex::new(seed.wrapping_add(3)),
         grass: SuperSimplex::new(seed.wrapping_add(4)),
     };
+
     let mut pending_chunks = HashMap::new();
 
     {
@@ -92,19 +92,17 @@ fn setup(world: &mut World) {
             .progress_chars("#>-"),
         );
 
-        for x in -22..22 {
-            for z in -22..22 {
-                let pos = ChunkPos::new(x, z);
-                let mut chunk = Chunk::new(SECTION_COUNT);
+        for (x, z) in iproduct!(-22..=22, -22..=22) {
+            let pos = ChunkPos::new(x, z);
+            let mut chunk = Chunk::new(SECTION_COUNT);
 
-                gen_chunk(&state, &mut chunk, pos);
+            gen_chunk(&state, &mut chunk, pos);
 
-                state.cache.push(pos, chunk.clone());
-                let _ = state.sender.try_send((pos, chunk));
-                pb.inc(1);
+            state.cache.push(pos, chunk.clone());
+            let _ = state.sender.try_send((pos, chunk));
+            pb.inc(1);
 
-                pending_chunks.insert(pos, Some((x + z) as u64));
-            }
+            pending_chunks.insert(pos, Some((x + z) as u64));
         }
 
         pb.finish();
@@ -196,7 +194,7 @@ fn send_recv_chunks(mut instances: Query<&mut Instance>, state: ResMut<WorldGenS
     // Collect all the new chunks that need to be loaded this tick.
     let mut to_send = vec![];
 
-    for (pos, priority) in &mut state.pending {
+    for (pos, priority) in &mut state.pending.iter_mut() {
         if let Some(pri) = priority.take() {
             to_send.push((pri, pos));
         }
@@ -235,83 +233,79 @@ fn chunk_worker(state: Arc<Mutex<ChunkWorkerState>>) {
 }
 
 fn gen_chunk(state: &ChunkWorkerState, chunk: &mut Chunk, pos: ChunkPos) {
-    for offset_z in 0..16 {
-        for offset_x in 0..16 {
-            let x = offset_x as i32 + pos.x * 16;
-            let z = offset_z as i32 + pos.z * 16;
+    for (offset_z, offset_x) in iproduct!(0..16, 0..16) {
+        let x = offset_x as i32 + pos.x * 16;
+        let z = offset_z as i32 + pos.z * 16;
 
-            let mut in_terrain = false;
-            let mut depth = 0;
+        let mut in_terrain = false;
+        let mut depth = 0;
 
-            // Fill in the terrain column.
-            for y in (0..chunk.section_count() as i32 * 16).rev() {
-                const WATER_HEIGHT: i32 = 120;
+        // Fill in the terrain column.
+        for y in (0..chunk.section_count() as i32 * 16).rev() {
+            const WATER_HEIGHT: i32 = 120;
 
-                let p = DVec3::new(f64::from(x), f64::from(y), f64::from(z));
+            let p = DVec3::new(f64::from(x), f64::from(y), f64::from(z));
 
-                let block = if has_terrain_at(&state, p) {
-                    let gravel_height = WATER_HEIGHT
-                        - 1
-                        - (fbm(&state.gravel, p / 10.0, 3, 2.0, 0.5) * 6.0).floor() as i32;
+            let block = if has_terrain_at(&state, p) {
+                let gravel_height = WATER_HEIGHT
+                    - 1
+                    - (fbm(&state.gravel, p / 10.0, 3, 2.0, 0.5) * 6.0).floor() as i32;
 
-                    if in_terrain {
-                        if depth > 0 {
-                            depth -= 1;
-                            if y < gravel_height {
-                                BlockState::GRAVEL
-                            } else {
-                                BlockState::DIRT
-                            }
-                        } else {
-                            BlockState::STONE
-                        }
-                    } else {
-                        in_terrain = true;
-                        let n = noise01(&state.stone, p / 15.0);
-
-                        depth = (n * 5.0).round() as u64;
-
+                if in_terrain {
+                    if depth > 0 {
+                        depth -= 1;
                         if y < gravel_height {
                             BlockState::GRAVEL
-                        } else if y < WATER_HEIGHT - 1 {
-                            BlockState::DIRT
                         } else {
-                            BlockState::GRASS_BLOCK
+                            BlockState::DIRT
                         }
+                    } else {
+                        BlockState::STONE
                     }
                 } else {
-                    in_terrain = false;
-                    depth = 0;
-                    if y < WATER_HEIGHT {
-                        BlockState::WATER
+                    in_terrain = true;
+                    let n = noise01(&state.stone, p / 15.0);
+
+                    depth = (n * 5.0).round() as u64;
+
+                    if y < gravel_height {
+                        BlockState::GRAVEL
+                    } else if y < WATER_HEIGHT - 1 {
+                        BlockState::DIRT
                     } else {
-                        BlockState::AIR
+                        BlockState::GRASS_BLOCK
                     }
-                };
+                }
+            } else {
+                in_terrain = false;
+                depth = 0;
+                if y < WATER_HEIGHT {
+                    BlockState::WATER
+                } else {
+                    BlockState::AIR
+                }
+            };
 
-                chunk.set_block_state(offset_x, y as usize, offset_z, block);
-            }
+            chunk.set_block_state(offset_x, y as usize, offset_z, block);
+        }
 
-            // Add grass on top of grass blocks.
-            for y in (0..chunk.section_count() * 16).rev() {
-                if chunk.block_state(offset_x, y, offset_z).is_air()
-                    && chunk.block_state(offset_x, y - 1, offset_z) == BlockState::GRASS_BLOCK
-                {
-                    let p = DVec3::new(f64::from(x), y as f64, f64::from(z));
-                    let density = fbm(&state.grass, p / 5.0, 4, 2.0, 0.7);
+        // Add grass on top of grass blocks.
+        for y in (0..chunk.section_count() * 16).rev() {
+            if chunk.block_state(offset_x, y, offset_z).is_air()
+                && chunk.block_state(offset_x, y - 1, offset_z) == BlockState::GRASS_BLOCK
+            {
+                let p = DVec3::new(f64::from(x), y as f64, f64::from(z));
+                let density = fbm(&state.grass, p / 5.0, 4, 2.0, 0.7);
 
-                    if density > 0.55 {
-                        if density > 0.7 && chunk.block_state(offset_x, y + 1, offset_z).is_air() {
-                            let upper =
-                                BlockState::TALL_GRASS.set(PropName::Half, PropValue::Upper);
-                            let lower =
-                                BlockState::TALL_GRASS.set(PropName::Half, PropValue::Lower);
+                if density > 0.55 {
+                    if density > 0.7 && chunk.block_state(offset_x, y + 1, offset_z).is_air() {
+                        let upper = BlockState::TALL_GRASS.set(PropName::Half, PropValue::Upper);
+                        let lower = BlockState::TALL_GRASS.set(PropName::Half, PropValue::Lower);
 
-                            chunk.set_block_state(offset_x, y + 1, offset_z, upper);
-                            chunk.set_block_state(offset_x, y, offset_z, lower);
-                        } else {
-                            chunk.set_block_state(offset_x, y, offset_z, BlockState::GRASS);
-                        }
+                        chunk.set_block_state(offset_x, y + 1, offset_z, upper);
+                        chunk.set_block_state(offset_x, y, offset_z, lower);
+                    } else {
+                        chunk.set_block_state(offset_x, y, offset_z, BlockState::GRASS);
                     }
                 }
             }
