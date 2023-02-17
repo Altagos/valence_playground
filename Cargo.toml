@@ -31,10 +31,25 @@ tracing-subscriber = "0.3"
 valence = { git = "https://github.com/valence-rs/valence", branch = "main" }
 vek = "0.15"
 
+[dev-dependencies]
+criterion = "0.4"
+
 [dependencies.bevy]
 version = "0.9"
 default-features = false
 features = ["bevy_asset", "bevy_gltf", "bevy_scene", "bevy_winit", "render", "png", "hdr", "x11"]
+
+[[bench]]
+name = "gen_chunk"
+harness = false
+
+[[bench]]
+name = "gen_multiple_chunks"
+harness = false
+
+[[bench]]
+name = "compare_gen_chunk"
+harness = false
 
 [features]
 default = [ "minecraft", "online", "gui" ]
