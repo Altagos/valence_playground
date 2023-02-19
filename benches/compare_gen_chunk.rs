@@ -35,7 +35,7 @@ pub fn compare_gen_chunk(c: &mut Criterion) {
                 gen_chunk(
                     black_box(&state),
                     black_box(&mut Chunk::new(16)),
-                    black_box(ChunkPos::new(rand::random(), rand::random())),
+                    black_box(ChunkPos::new(10, 10)),
                 )
             })
         });
@@ -45,7 +45,7 @@ pub fn compare_gen_chunk(c: &mut Criterion) {
                 gen_chunk_fors(
                     black_box(&state),
                     black_box(&mut Chunk::new(16)),
-                    black_box(ChunkPos::new(rand::random(), rand::random())),
+                    black_box(ChunkPos::new(10, 10)),
                 )
             })
         });
