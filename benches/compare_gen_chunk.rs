@@ -28,7 +28,7 @@ pub fn compare_gen_chunk(c: &mut Criterion) {
     group.sampling_mode(SamplingMode::Flat);
     group.sample_size(50);
 
-    for i in 0u32..5u32 {
+    for i in 0u32..50u32 {
         group.bench_with_input(BenchmarkId::new("iproduct", i), &i, |b, i| {
             let state = create_state(*i);
             b.iter(|| {
@@ -53,5 +53,5 @@ pub fn compare_gen_chunk(c: &mut Criterion) {
     group.finish()
 }
 
-criterion_group!(benches, compare_gen_chunk,);
+criterion_group!(benches, compare_gen_chunk);
 criterion_main!(benches);
