@@ -14,7 +14,7 @@ use lru::LruCache;
 use noise::{NoiseFn, SuperSimplex};
 use valence::{bevy_app::Plugin, prelude::*, server::Server};
 
-use crate::{VPSystems, SECTION_COUNT};
+use crate::{VPSystems, PREGEN_CHUNKS, SECTION_COUNT, SPAWN_POS};
 
 pub struct ChunkWorkerState {
     pub sender: Sender<(ChunkPos, Chunk)>,
@@ -56,11 +56,12 @@ fn setup(world: &mut World) {
     info!(target: "minecraft::world_gen", "Starting world generation...");
 
     let seed = rand::random();
+    // let seed = 2968952028; // solid block at x:0 z:0
 
     info!(target: "minecraft::world_gen", "Current seed: {seed}");
 
     let mut num_pregen_chunks = 0;
-    for (..) in iproduct!(-22..22, -22..22) {
+    for (..) in iproduct!(PREGEN_CHUNKS, PREGEN_CHUNKS) {
         num_pregen_chunks += 1;
     }
 
@@ -92,7 +93,7 @@ fn setup(world: &mut World) {
             .progress_chars("#>-"),
         );
 
-        for (x, z) in iproduct!(-22..=22, -22..=22) {
+        for (x, z) in iproduct!(PREGEN_CHUNKS, PREGEN_CHUNKS) {
             let pos = ChunkPos::new(x, z);
             let mut chunk = Chunk::new(SECTION_COUNT);
 
@@ -107,6 +108,24 @@ fn setup(world: &mut World) {
 
         pb.finish();
         pb.set_message("Pregeneration complete");
+    }
+
+    let spawn_chunk = state
+        .cache
+        .get(&ChunkPos::new(0, 0))
+        .expect("Should be generated");
+    let mut y = 319 + 64;
+
+    loop {
+        let block = spawn_chunk.block_state(0, y, 0);
+        if block.is_air() {
+            y -= 1;
+        } else {
+            y = y - 63; // Blocks below 0 are treated as a bove 0
+            *SPAWN_POS.lock().unwrap() = DVec3::new(0.0, y as f64, 0.0);
+            debug!(target: "minecraft::world_gen", "Spawn height: {y}, Spawn block: {}", block);
+            break;
+        }
     }
 
     // Chunks are generated in a thread pool for parallelism and to avoid blocking

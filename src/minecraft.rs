@@ -13,7 +13,10 @@ use valence::{
 };
 
 use self::{building::BuildingPlugin, chat::ChatPlugin, world_gen::WorldGenPlugin};
-use crate::{VPSystems, MAX_CONNECTIONS, PLAYER_COUNT, PLAYER_UUID_1, PLAYER_UUID_2, SPAWN_POS};
+use crate::{
+    VPSystems, MAX_CONNECTIONS, MAX_VIEW_DISTANCE, PLAYER_COUNT, PLAYER_UUID_1, PLAYER_UUID_2,
+    SPAWN_POS,
+};
 
 pub struct MinecraftPlugin;
 
@@ -54,16 +57,15 @@ fn init_clients(
     mut player_list: ResMut<PlayerList>,
 ) {
     let instance = instances.get_single().unwrap();
+    let spawn = SPAWN_POS.lock().unwrap().clone();
 
     for mut client in &mut clients {
-        client.set_position([SPAWN_POS.x, SPAWN_POS.y, SPAWN_POS.z]);
+        client.set_position([spawn.x, spawn.y, spawn.z]);
         client.set_instance(instance);
         client.set_game_mode(GameMode::Creative);
         client.set_op_level(2);
 
-        if client.view_distance() > 20 {
-            client.set_view_distance(20);
-        }
+        client.set_view_distance(MAX_VIEW_DISTANCE);
 
         client.send_message(
             "Please open your player list (tab key)."

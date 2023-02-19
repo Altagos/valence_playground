@@ -13,4 +13,4 @@ args = ["run"]
 
 [tasks.no_gui]
 command = "cargo"
-args = ["run", "--no-default-features", "--features", "minecraft"]
+args = ["run", "-r", "--no-default-features", "--features", "minecraft"]
