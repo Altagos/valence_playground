@@ -31,25 +31,30 @@ impl Plugin for ChatPlugin {
 }
 
 fn chat_message(
-    mut clients: Query<(&mut Client, Option<&mut McEntity>)>,
+    mut clients: Query<&mut Client>,
     mut events: EventReader<ChatMessage>,
     mut messages: ResMut<ChatMessages>,
 ) {
     for event in events.iter() {
         let Ok(sender) = clients.get_component::<Client>(event.client) else {
+            warn!("Unable to find client for message: {:?}", event);
             continue;
         };
+
+        let message = event.message.to_string();
 
         let username = match sender.player().get_custom_name() {
             Some(name) => name.clone(),
             None => Text::from(sender.username().to_string()),
         };
 
-        for (mut c, _) in clients.iter_mut() {
-            c.send_message(format!("{username}: {}", event.message));
-        }
+        info!(target: "minecraft::chat","{username}: {}", message);
 
-        info!(target: "minecraft::chat","{username}: {}", event.message);
+        let formatted = format!("{}: ", username).into_text() + message.into_text();
+
+        clients.par_for_each_mut(16, |mut client| {
+            client.send_message(formatted.clone());
+        });
 
         messages.add(Message::ChatMessage(event.clone()));
     }

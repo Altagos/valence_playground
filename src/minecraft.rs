@@ -5,18 +5,13 @@ pub mod world_gen;
 use std::net::SocketAddr;
 
 use bevy::prelude::Plugin;
-use rand::Rng;
 use valence::{
     client::{despawn_disconnected_clients, event::default_event_handler},
-    player_list::Entry,
     prelude::*,
 };
 
 use self::{building::BuildingPlugin, chat::ChatPlugin, world_gen::WorldGenPlugin};
-use crate::{
-    VPSystems, MAX_CONNECTIONS, MAX_VIEW_DISTANCE, PLAYER_COUNT, PLAYER_UUID_1, PLAYER_UUID_2,
-    SPAWN_POS,
-};
+use crate::{VPSystems, MAX_CONNECTIONS, MAX_VIEW_DISTANCE, PLAYER_COUNT, SPAWN_POS};
 
 pub struct MinecraftPlugin;
 
@@ -67,62 +62,25 @@ fn init_clients(
 
         client.set_view_distance(MAX_VIEW_DISTANCE);
 
-        client.send_message(
-            "Please open your player list (tab key)."
-                .italic()
-                .color(Color::WHITE),
-        );
-
         let entry = PlayerListEntry::new()
             .with_username(client.username())
             .with_properties(client.properties()) // For the player's skin and cape.
             .with_game_mode(client.game_mode())
-            .with_ping(0) // Use negative values to indicate missing.
+            .with_ping(-1) // Use negative values to indicate missing.
             .with_display_name(Some(client.username().color(Color::new(255, 87, 66))));
 
         player_list.insert(client.uuid(), entry);
+        *PLAYER_COUNT.lock().unwrap() += 1;
     }
 }
 
-fn update_player_list(mut player_list: ResMut<PlayerList>, server: Res<Server>) {
-    let tick = server.current_tick();
-
-    player_list.set_header("Current tick: ".into_text() + tick);
-    player_list
-        .set_footer("Current tick but in purple: ".into_text() + tick.color(Color::LIGHT_PURPLE));
-
-    if tick % 5 == 0 {
-        let mut rng = rand::thread_rng();
-        let color = Color::new(rng.gen(), rng.gen(), rng.gen());
-
-        match player_list.get_mut(PLAYER_UUID_1) {
-            Some(entry) => {
-                let new_display_name = entry.display_name().unwrap().clone().color(color);
-                entry.set_display_name(Some(new_display_name));
-            }
-            None => {
-                player_list.insert(
-                    PLAYER_UUID_1,
-                    PlayerListEntry::new().with_display_name(Some("persistent entry with no ping")),
-                );
-            }
-        };
-    }
-
-    if tick % 20 == 0 {
-        match player_list.entry(PLAYER_UUID_2) {
-            Entry::Occupied(oe) => {
-                oe.remove();
-            }
-            Entry::Vacant(ve) => {
-                let entry = PlayerListEntry::new()
-                    .with_display_name(Some("Hello!"))
-                    .with_ping(300);
-
-                ve.insert(entry);
-            }
-        }
-    }
+fn update_player_list(mut player_list: ResMut<PlayerList>) {
+    player_list.set_header("Just a normal minecraft server".into_text());
+    player_list.set_footer(format!(
+        "{}/{}",
+        *PLAYER_COUNT.lock().unwrap(),
+        MAX_CONNECTIONS
+    ));
 }
 
 fn update_player_count(clients: Query<(Entity, &Client)>) {
@@ -159,7 +117,6 @@ impl AsyncCallbacks for MyCallbacks {
         // return Err("You are not meant to join this example".color(Color::RED));
 
         if MAX_CONNECTIONS > *PLAYER_COUNT.lock().unwrap() {
-            *PLAYER_COUNT.lock().unwrap() += 1;
             return Ok(());
         }
         return Err("Server full".color(Color::RED));
