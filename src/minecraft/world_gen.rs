@@ -14,7 +14,7 @@ use lru::LruCache;
 use noise::{NoiseFn, SuperSimplex};
 use valence::{bevy_app::Plugin, prelude::*, server::Server};
 
-use crate::{VPSystems, PREGEN_CHUNKS, SECTION_COUNT, SPAWN_POS};
+use crate::{VPSystems, CONFIG, SECTION_COUNT, SPAWN_POS};
 
 pub struct ChunkWorkerState {
     pub sender: Sender<(ChunkPos, Chunk)>,
@@ -55,13 +55,14 @@ impl Plugin for WorldGenPlugin {
 fn setup(world: &mut World) {
     info!(target: "minecraft::world_gen", "Starting world generation...");
 
-    let seed = rand::random();
+    let seed = CONFIG.world.seed.into();
     // let seed = 2968952028; // solid block at x:0 z:0
 
     info!(target: "minecraft::world_gen", "Current seed: {seed}");
 
     let mut num_pregen_chunks = 0;
-    for (..) in iproduct!(PREGEN_CHUNKS, PREGEN_CHUNKS) {
+    let pregen_chunks = CONFIG.world.pregen_chunks.clone();
+    for (..) in iproduct!(pregen_chunks.clone(), pregen_chunks.clone()) {
         num_pregen_chunks += 1;
     }
 
@@ -93,7 +94,7 @@ fn setup(world: &mut World) {
             .progress_chars("#>-"),
         );
 
-        for (x, z) in iproduct!(PREGEN_CHUNKS, PREGEN_CHUNKS) {
+        for (x, z) in iproduct!(pregen_chunks.clone(), pregen_chunks.clone()) {
             let pos = ChunkPos::new(x, z);
             let mut chunk = Chunk::new(SECTION_COUNT);
 
@@ -121,8 +122,8 @@ fn setup(world: &mut World) {
         if block.is_air() {
             y -= 1;
         } else {
-            y = y - 63; // Blocks below 0 are treated as a bove 0
-            *SPAWN_POS.lock().unwrap() = DVec3::new(0.0, y as f64, 0.0);
+            y = y - 62; // Blocks below 0 are treated as a bove 0
+            *SPAWN_POS.lock().unwrap() = DVec3::new(0.0, (y) as f64, 0.0);
             debug!(target: "minecraft::world_gen", "Spawn height: {y}, Spawn block: {}", block);
             break;
         }
