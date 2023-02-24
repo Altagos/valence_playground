@@ -122,7 +122,7 @@ fn setup(world: &mut World) {
         if block.is_air() {
             y -= 1;
         } else {
-            y = y - 62; // Blocks below 0 are treated as a bove 0
+            y = y - 60; // Blocks below 0 are treated as a bove 0
             *SPAWN_POS.lock().unwrap() = DVec3::new(0.0, y as f64, 0.0);
             debug!(target: "minecraft::world_gen", "Spawn height: {y}, Spawn block: {}", block);
             break;
