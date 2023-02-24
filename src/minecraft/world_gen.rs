@@ -68,7 +68,7 @@ fn setup(world: &mut World) {
 
     let (finished_sender, finished_receiver) = flume::unbounded();
     let (pending_sender, pending_receiver) = flume::unbounded();
-    let cache = LruCache::new(NonZeroUsize::new(num_pregen_chunks + 100).unwrap());
+    let cache = LruCache::new(NonZeroUsize::new(CONFIG.world.chunks_cached).unwrap());
 
     let mut state = ChunkWorkerState {
         sender: finished_sender,
@@ -115,7 +115,7 @@ fn setup(world: &mut World) {
         .cache
         .get(&ChunkPos::new(0, 0))
         .expect("Should be generated");
-    let mut y = 319 + 64;
+    let mut y = spawn_chunk.section_count() * 16 - 1;
 
     loop {
         let block = spawn_chunk.block_state(0, y, 0);
@@ -123,7 +123,7 @@ fn setup(world: &mut World) {
             y -= 1;
         } else {
             y = y - 62; // Blocks below 0 are treated as a bove 0
-            *SPAWN_POS.lock().unwrap() = DVec3::new(0.0, (y) as f64, 0.0);
+            *SPAWN_POS.lock().unwrap() = DVec3::new(0.0, y as f64, 0.0);
             debug!(target: "minecraft::world_gen", "Spawn height: {y}, Spawn block: {}", block);
             break;
         }
@@ -294,6 +294,9 @@ fn gen_block(
         let block = if has_terrain_at(&state, p) {
             let gravel_height =
                 WATER_HEIGHT - 1 - (fbm(&state.gravel, p / 10.0, 3, 2.0, 0.5) * 6.0).floor() as i32;
+            let sand_height = gravel_height
+                + 3
+                + (fbm(&state.gravel, p / 10.0, 1, 2.0, 0.5) * 6.0).floor() as i32;
 
             if in_terrain {
                 if depth > 0 {
@@ -314,8 +317,8 @@ fn gen_block(
 
                 if y < gravel_height {
                     BlockState::GRAVEL
-                } else if y < WATER_HEIGHT - 1 {
-                    BlockState::DIRT
+                } else if y < sand_height {
+                    BlockState::SAND
                 } else {
                     BlockState::GRASS_BLOCK
                 }
@@ -335,7 +338,8 @@ fn gen_block(
 
     // Add grass on top of grass blocks.
     for y in (0..chunk.section_count() * 16).rev() {
-        if chunk.block_state(offset_x, y, offset_z).is_air()
+        if y > 0
+            && chunk.block_state(offset_x, y, offset_z).is_air()
             && chunk.block_state(offset_x, y - 1, offset_z) == BlockState::GRASS_BLOCK
         {
             let p = DVec3::new(f64::from(x), y as f64, f64::from(z));

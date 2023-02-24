@@ -1,7 +1,5 @@
 use bevy::prelude::*;
 
-use crate::CONFIG;
-
 pub mod inspector;
 
 pub struct GuiPlugin;
@@ -11,6 +9,8 @@ impl Plugin for GuiPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         #[cfg(feature = "gui")]
         {
+            use crate::CONFIG;
+            
             if CONFIG.gui {
                 use bevy::{log::LogPlugin, window::PresentMode};
                 use bevy_inspector_egui::bevy_egui::EguiPlugin;
