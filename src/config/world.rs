@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub struct WorldConfig {
     pub seed: Seed,
     pub chunks_cached: usize,
+    pub spawn: Option<[f64; 3]>,
     pub pregen_chunks: RangeInclusive<i32>,
 }
 
@@ -14,6 +15,7 @@ impl Default for WorldConfig {
         Self {
             seed: Default::default(),
             chunks_cached: 4000,
+            spawn: None,
             pregen_chunks: -12..=12,
         }
     }

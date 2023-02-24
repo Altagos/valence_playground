@@ -117,15 +117,23 @@ fn setup(world: &mut World) {
         .expect("Should be generated");
     let mut y = spawn_chunk.section_count() * 16 - 1;
 
-    loop {
-        let block = spawn_chunk.block_state(0, y, 0);
-        if block.is_air() {
-            y -= 1;
-        } else {
-            y = y - 50; // Blocks below 0 are treated as a bove 0
-            *SPAWN_POS.lock().unwrap() = DVec3::new(0.0, y as f64, 0.0);
-            debug!(target: "minecraft::world_gen", "Spawn height: {y}, Spawn block: {}", block);
-            break;
+    if CONFIG.world.spawn.is_some() {
+        let spawn = CONFIG.world.spawn.unwrap();
+        *SPAWN_POS.lock().unwrap() = DVec3::new(spawn[0], spawn[1], spawn[2]);
+        debug!(target: "minecraft::world_gen", "Spawn at {} {} {}", spawn[0], spawn[1], spawn[2]);
+    } else {
+        loop {
+            let block = spawn_chunk.block_state(0, y, 0);
+            if block.is_air() {
+                y -= 1;
+            } else if y <= 0 {
+                break;
+            } else {
+                y = y - 50; // Blocks below 0 are treated as a bove 0
+                *SPAWN_POS.lock().unwrap() = DVec3::new(0.0, y as f64, 0.0);
+                debug!(target: "minecraft::world_gen", "Spawn height: {y}, Spawn block: {}", block);
+                break;
+            }
         }
     }
 
