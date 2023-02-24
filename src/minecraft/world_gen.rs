@@ -160,7 +160,11 @@ fn setup(world: &mut World) {
         .resource::<Server>()
         .new_instance(DimensionId::default());
 
-    world.spawn(instance);
+    let id = world.spawn(instance).id();
+
+    let mut boat = McEntity::new(EntityKind::Boat, id);
+    boat.set_position([0., 200., 0.]);
+    world.spawn(boat);
 
     info!(target: "minecraft::world_gen", "World generation started");
 }
