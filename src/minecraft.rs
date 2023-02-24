@@ -4,6 +4,7 @@ pub mod chat;
 pub mod world_gen;
 
 use bevy::prelude::Plugin;
+use rand::Rng;
 use valence::{
     client::{despawn_disconnected_clients, event::default_event_handler},
     prelude::*,
@@ -39,7 +40,7 @@ impl Plugin for MinecraftPlugin {
             .add_system_set(PlayerList::default_system_set())
             .add_system(init_clients.label(VPSystems::InitClients))
             .add_system(update_player_list)
-            .add_system(update_player_count)
+            .add_system(player_left)
             .add_system(despawn_disconnected_clients)
             .add_system(set_view_distance);
     }
@@ -55,6 +56,7 @@ fn init_clients(
 ) {
     let instance = instances.get_single().unwrap();
     let spawn = SPAWN_POS.lock().unwrap().clone();
+    let mut new_players = vec![];
 
     for mut client in &mut clients {
         client.set_position([spawn.x, spawn.y, spawn.z]);
@@ -62,18 +64,38 @@ fn init_clients(
         client.set_game_mode(GameMode::Creative);
         client.set_op_level(2);
 
+        let mut rng = rand::thread_rng();
+        let name_color = Color::new(
+            rng.gen_range(0..=255),
+            rng.gen_range(0..=255),
+            rng.gen_range(0..=255),
+        );
+
+        let username = client.username().to_owned_username().color(name_color);
+        client.player_mut().set_custom_name(Some(username.clone()));
+
         client.set_view_distance(CONFIG.server.max_view_distance);
 
         let entry = PlayerListEntry::new()
             .with_username(client.username())
             .with_properties(client.properties()) // For the player's skin and cape.
             .with_game_mode(client.game_mode())
-            .with_ping(-1) // Use negative values to indicate missing.
-            .with_display_name(Some(client.username().color(Color::new(255, 87, 66))));
+            .with_ping(client.ping()) // Use negative values to indicate missing.
+            .with_display_name(Some(
+                client.username().to_owned_username().color(name_color),
+            ));
 
+        info!(target: "minecraft", "{} joined", client.username().to_string());
+        new_players.push(username);
         player_list.insert(client.uuid(), entry);
         *PLAYER_COUNT.lock().unwrap() += 1;
     }
+
+    clients.par_for_each_mut(16, |mut c| {
+        for name in &new_players {
+            c.send_message(name.to_owned() + " joined".to_string().color(Color::YELLOW))
+        }
+    });
 }
 
 fn update_player_list(mut player_list: ResMut<PlayerList>) {
@@ -85,12 +107,26 @@ fn update_player_list(mut player_list: ResMut<PlayerList>) {
     ));
 }
 
-fn update_player_count(clients: Query<&Client>) {
+fn player_left(mut clients: Query<&mut Client>) {
+    let mut players = vec![];
+
     for client in &clients {
         if client.is_disconnected() {
+            let username = match client.player().get_custom_name() {
+                Some(u) => u.to_owned(),
+                None => client.username().to_string().into_text(),
+            };
+            players.push(username.to_owned());
+            info!(target: "minecraft", "{} left", client.username().to_string());
             *PLAYER_COUNT.lock().unwrap() -= 1;
         }
     }
+
+    clients.par_for_each_mut(16, |mut c| {
+        for name in &players {
+            c.send_message(name.to_owned() + " left".to_string().color(Color::YELLOW))
+        }
+    });
 }
 
 fn set_view_distance(mut clients: Query<&mut Client>) {

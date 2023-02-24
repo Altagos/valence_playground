@@ -2,7 +2,7 @@ use bevy::prelude::{Plugin, Query};
 #[allow(unused_imports)]
 use bevy_inspector_egui::{bevy_egui, egui};
 use valence::{
-    client::event::{ChatCommand, ChatMessage},
+    client::event::{ChatMessage, CommandExecution},
     prelude::*,
     server::EventLoop,
 };
@@ -48,9 +48,9 @@ fn chat_message(
             None => Text::from(sender.username().to_string()),
         };
 
-        info!(target: "minecraft::chat","{username}: {}", message);
+        info!(target: "minecraft::chat", "{username}: {}", message);
 
-        let formatted = format!("{}: ", username).into_text() + message.into_text();
+        let formatted = username + ": ".into_text() + message.into_text();
 
         clients.par_for_each_mut(16, |mut client| {
             client.send_message(formatted.clone());
@@ -60,7 +60,7 @@ fn chat_message(
     }
 }
 
-fn interpret_command(mut clients: Query<&mut Client>, mut events: EventReader<ChatCommand>) {
+fn interpret_command(mut clients: Query<&mut Client>, mut events: EventReader<CommandExecution>) {
     for event in events.iter() {
         let Ok(mut client) = clients.get_component_mut::<Client>(event.client) else {
             continue;

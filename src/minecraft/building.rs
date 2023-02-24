@@ -1,6 +1,6 @@
 use bevy::prelude::Plugin;
 use valence::{
-    client::event::{FinishDigging, StartDigging, UseItemOnBlock},
+    client::event::{PlayerInteractBlock, StartDigging, StopDestroyBlock},
     prelude::*,
     protocol::types::Hand,
 };
@@ -27,7 +27,7 @@ fn digging_creative_mode(
             continue;
         };
         if client.game_mode() == GameMode::Creative {
-            instance.set_block_state(event.position, BlockState::AIR);
+            instance.set_block(event.position, BlockState::AIR);
         }
     }
 }
@@ -35,7 +35,7 @@ fn digging_creative_mode(
 fn digging_survival_mode(
     clients: Query<&Client>,
     mut instances: Query<&mut Instance>,
-    mut events: EventReader<FinishDigging>,
+    mut events: EventReader<StopDestroyBlock>,
 ) {
     let mut instance = instances.single_mut();
 
@@ -44,7 +44,7 @@ fn digging_survival_mode(
             continue;
         };
         if client.game_mode() == GameMode::Survival {
-            instance.set_block_state(event.position, BlockState::AIR);
+            instance.set_block(event.position, BlockState::AIR);
         }
     }
 }
@@ -52,7 +52,7 @@ fn digging_survival_mode(
 fn place_blocks(
     mut clients: Query<(&Client, &mut Inventory)>,
     mut instances: Query<&mut Instance>,
-    mut events: EventReader<UseItemOnBlock>,
+    mut events: EventReader<PlayerInteractBlock>,
 ) {
     let mut instance = instances.single_mut();
 
@@ -88,7 +88,7 @@ fn place_blocks(
             };
             inventory.replace_slot(slot_id, slot);
         }
-        let real_pos = event.position.get_in_direction(event.face);
-        instance.set_block_state(real_pos, block_kind.to_state());
+        let real_pos = event.position.get_in_direction(event.direction);
+        instance.set_block(real_pos, block_kind.to_state());
     }
 }

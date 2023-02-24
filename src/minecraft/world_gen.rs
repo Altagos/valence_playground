@@ -338,8 +338,7 @@ fn gen_block(
 
     // Add grass on top of grass blocks.
     for y in (0..chunk.section_count() * 16).rev() {
-        if y > 0
-            && chunk.block_state(offset_x, y, offset_z).is_air()
+        if chunk.block_state(offset_x, y, offset_z).is_air()
             && chunk.block_state(offset_x, y - 1, offset_z) == BlockState::GRASS_BLOCK
         {
             let p = DVec3::new(f64::from(x), y as f64, f64::from(z));
@@ -354,6 +353,23 @@ fn gen_block(
                     chunk.set_block_state(offset_x, y, offset_z, lower);
                 } else {
                     chunk.set_block_state(offset_x, y, offset_z, BlockState::GRASS);
+                }
+            }
+        } else if chunk.block_state(offset_x, y, offset_z).is_liquid()
+            && chunk.block_state(offset_x, y - 1, offset_z) == BlockState::GRAVEL
+        {
+            let p = DVec3::new(f64::from(x), y as f64, f64::from(z));
+            let density = fbm(&state.grass, p / 5.0, 4, 2.0, 0.7);
+
+            if density > 0.55 {
+                if density > 0.7 && chunk.block_state(offset_x, y + 1, offset_z).is_liquid() {
+                    let upper = BlockState::TALL_SEAGRASS.set(PropName::Half, PropValue::Upper);
+                    let lower = BlockState::TALL_SEAGRASS.set(PropName::Half, PropValue::Lower);
+
+                    chunk.set_block_state(offset_x, y + 1, offset_z, upper);
+                    chunk.set_block_state(offset_x, y, offset_z, lower);
+                } else {
+                    chunk.set_block_state(offset_x, y, offset_z, BlockState::SEAGRASS);
                 }
             }
         }
