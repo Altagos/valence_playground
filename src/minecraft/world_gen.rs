@@ -1,3 +1,5 @@
+pub mod chunk_worker;
+
 use std::{
     collections::{hash_map::Entry, HashMap},
     num::NonZeroUsize,
@@ -7,6 +9,7 @@ use std::{
 };
 
 use bevy::prelude::{Query, ResMut, Resource, World};
+use bevy_inspector_egui::{bevy_egui, egui, quick::ResourceInspectorPlugin};
 use flume::{Receiver, Sender};
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::iproduct;
@@ -14,17 +17,12 @@ use lru::LruCache;
 use noise::{NoiseFn, SuperSimplex};
 use valence::{bevy_app::Plugin, prelude::*, server::Server};
 
+use self::chunk_worker::*;
 use crate::{VPSystems, CONFIG, SECTION_COUNT, SPAWN_POS};
 
 /// The order in which chunks should be processed by the thread pool. Smaller
 /// values are sent first.
 pub type Priority = u64;
-
-/// Chunk Worker sender
-type CWSender = Sender<WorkerResponse>;
-
-/// Chunk Worker receiver
-type CWReceiver = Receiver<WorkerMessage>;
 
 /// World Gen sender
 type WGSender = Sender<WorkerMessage>;
@@ -32,27 +30,8 @@ type WGSender = Sender<WorkerMessage>;
 /// World Gen receiver
 type WGReceiver = Receiver<WorkerResponse>;
 
-pub enum WorkerMessage {
-    Chunk(ChunkPos),
-    GetTerrainSettings,
-}
-
-pub enum WorkerResponse {
-    Chunk(ChunkPos, Chunk),
-    GetTerrainSettings,
-}
-
-pub struct ChunkWorkerState {
-    pub sender: CWSender,
-    pub receiver: CWReceiver,
-    pub cache: LruCache<ChunkPos, Chunk>,
-    // Noise functions
-    pub density: SuperSimplex,
-    pub hilly: SuperSimplex,
-    pub stone: SuperSimplex,
-    pub gravel: SuperSimplex,
-    pub grass: SuperSimplex,
-}
+#[derive(Resource, Clone, Debug)]
+struct UpdateTerrainSettings(bool);
 
 #[derive(Resource)]
 pub struct WorldGenState {
@@ -67,7 +46,11 @@ pub struct WorldGenPlugin;
 
 impl Plugin for WorldGenPlugin {
     fn build(&self, app: &mut App) {
-        app.add_startup_system(setup)
+        app.init_resource::<TerrainSettings>() // `ResourceInspectorPlugin` won't initialize the resource
+            .register_type::<TerrainSettings>()
+            .insert_resource(UpdateTerrainSettings(false)) // you need to register your type to display it
+            .add_startup_system(setup)
+            .add_system(set_terrain_settings)
             .add_system(remove_unviewed_chunks.after(VPSystems::InitClients))
             .add_system(update_client_views.after(remove_unviewed_chunks))
             .add_system(send_recv_chunks.after(update_client_views));
@@ -96,6 +79,7 @@ fn setup(world: &mut World) {
         sender: finished_sender,
         receiver: pending_receiver,
         cache,
+        settings: TerrainSettings::default(),
         density: SuperSimplex::new(seed),
         hilly: SuperSimplex::new(seed.wrapping_add(1)),
         stone: SuperSimplex::new(seed.wrapping_add(2)),
@@ -178,6 +162,8 @@ fn setup(world: &mut World) {
         receiver: finished_receiver,
     });
 
+    world.insert_resource(TerrainSettings::default());
+
     let instance = world
         .resource::<Server>()
         .new_instance(DimensionId::default());
@@ -246,7 +232,7 @@ fn send_recv_chunks(mut instances: Query<&mut Instance>, state: ResMut<WorldGenS
                 instance.insert_chunk(pos, chunk);
                 assert!(state.pending.remove(&pos).is_some());
             }
-            WorkerResponse::GetTerrainSettings => todo!("Not yet implemented"),
+            WorkerResponse::GetTerrainSettings(_) => todo!("Not yet implemented"),
         }
     }
 
@@ -268,206 +254,96 @@ fn send_recv_chunks(mut instances: Query<&mut Instance>, state: ResMut<WorldGenS
     }
 }
 
-fn chunk_worker(state: Arc<Mutex<ChunkWorkerState>>) {
-    let mut state = state.lock().unwrap();
-    while let Ok(msg) = state.receiver.recv() {
-        match msg {
-            WorkerMessage::Chunk(pos) => {
-                let mut chunk = Chunk::new(SECTION_COUNT);
-                let cached;
-                let start = Instant::now();
-
-                if state.cache.contains(&pos) {
-                    chunk = state.cache.get_mut(&pos).unwrap().to_owned();
-                    cached = true;
-                } else {
-                    gen_chunk(&state, &mut chunk, pos);
-                    state.cache.push(pos, chunk.clone());
-                    cached = false;
-                }
-
-                let duration = start.elapsed();
-                trace!(target: "minecraft::world_gen", cached = cached,"Generated chunk at: {pos:?} ({duration:?})");
-
-                let _ = state.sender.try_send(WorkerResponse::Chunk(pos, chunk));
-            }
-            WorkerMessage::GetTerrainSettings => todo!("Not yet implemented"),
-        }
-    }
-}
-
-#[inline]
-pub fn gen_chunk(state: &ChunkWorkerState, chunk: &mut Chunk, pos: ChunkPos) {
-    for (offset_z, offset_x) in iproduct!(0..16, 0..16) {
-        let x = offset_x as i32 + pos.x * 16;
-        let z = offset_z as i32 + pos.z * 16;
-
-        gen_block(state, chunk, x, z, offset_x, offset_z);
-    }
-}
-
-#[inline]
-pub fn gen_chunk_fors(state: &ChunkWorkerState, chunk: &mut Chunk, pos: ChunkPos) {
-    for offset_z in 0..16 {
-        for offset_x in 0..16 {
-            let x = offset_x as i32 + pos.x * 16;
-            let z = offset_z as i32 + pos.z * 16;
-
-            gen_block(state, chunk, x, z, offset_x, offset_z);
-        }
-    }
-}
-
-fn gen_block(
-    state: &ChunkWorkerState,
-    chunk: &mut Chunk,
-    x: i32,
-    z: i32,
-    offset_x: usize,
-    offset_z: usize,
+fn set_terrain_settings(
+    settings: ResMut<TerrainSettings>,
+    mut update: ResMut<UpdateTerrainSettings>,
+    mut state: ResMut<WorldGenState>,
+    mut instances: Query<&mut Instance>,
+    mut clients: Query<&mut Client>,
 ) {
-    let mut in_terrain = false;
-    let mut depth = 0;
+    if update.0 {
+        update.0 = false;
+        let _ = state
+            .sender
+            .try_send(WorkerMessage::SetTerrainSettings(settings.clone()));
+        let mut instance = instances.single_mut();
 
-    // Fill in the terrain column.
-    for y in (0..chunk.section_count() as i32 * 16).rev() {
-        const WATER_HEIGHT: i32 = 120;
+        instance.clear_chunks();
 
-        let p = DVec3::new(f64::from(x), f64::from(y), f64::from(z));
+        for mut client in &mut clients {
+            client.send_message("Regenerating terrain".color(Color::RED));
 
-        let block = if has_terrain_at(&state, p) {
-            let gravel_height =
-                WATER_HEIGHT - 1 - (fbm(&state.gravel, p / 10.0, 3, 2.0, 0.5) * 6.0).floor() as i32;
-            let sand_height = gravel_height
-                + 3
-                + (fbm(&state.gravel, p / 10.0, 1, 2.0, 0.5) * 6.0).floor() as i32;
-
-            if in_terrain {
-                if depth > 0 {
-                    depth -= 1;
-                    if y < gravel_height {
-                        BlockState::GRAVEL
-                    } else {
-                        BlockState::DIRT
+            let view = client.view();
+            let queue_pos = |pos| {
+                if instance.chunk(pos).is_none() {
+                    match state.pending.entry(pos) {
+                        Entry::Occupied(mut oe) => {
+                            if let Some(priority) = oe.get_mut() {
+                                let dist = view.pos.distance_squared(pos);
+                                *priority = (*priority).min(dist);
+                            }
+                        }
+                        Entry::Vacant(ve) => {
+                            let dist = view.pos.distance_squared(pos);
+                            ve.insert(Some(dist));
+                        }
                     }
-                } else {
-                    BlockState::STONE
                 }
-            } else {
-                in_terrain = true;
-                let n = noise01(&state.stone, p / 15.0);
+            };
 
-                depth = (n * 5.0).round() as u64;
+            // Queue all the new chunks in the view to be sent to the thread pool.
 
-                if y < gravel_height {
-                    BlockState::GRAVEL
-                } else if y < sand_height {
-                    BlockState::SAND
-                } else {
-                    BlockState::GRASS_BLOCK
-                }
+            view.iter().for_each(queue_pos);
+        }
+
+        // Collect all the new chunks that need to be loaded this tick.
+        let mut to_send = vec![];
+
+        for (pos, priority) in &mut state.pending.iter_mut() {
+            if let Some(pri) = priority.take() {
+                to_send.push((pri, pos.clone()));
             }
-        } else {
-            in_terrain = false;
-            depth = 0;
-            if y < WATER_HEIGHT {
-                BlockState::WATER
-            } else {
-                BlockState::AIR
-            }
-        };
+        }
 
-        chunk.set_block_state(offset_x, y as usize, offset_z, block);
-    }
+        // Sort chunks by ascending priority.
+        to_send.sort_unstable_by_key(|(pri, _)| *pri);
 
-    // Add grass on top of grass blocks.
-    for y in (0..chunk.section_count() * 16).rev() {
-        if chunk.block_state(offset_x, y, offset_z).is_air()
-            && chunk.block_state(offset_x, y - 1, offset_z) == BlockState::GRASS_BLOCK
-        {
-            let p = DVec3::new(f64::from(x), y as f64, f64::from(z));
-            let density = fbm(&state.grass, p / 5.0, 4, 2.0, 0.7);
-
-            if density > 0.55 {
-                if density > 0.7 && chunk.block_state(offset_x, y + 1, offset_z).is_air() {
-                    let upper = BlockState::TALL_GRASS.set(PropName::Half, PropValue::Upper);
-                    let lower = BlockState::TALL_GRASS.set(PropName::Half, PropValue::Lower);
-
-                    chunk.set_block_state(offset_x, y + 1, offset_z, upper);
-                    chunk.set_block_state(offset_x, y, offset_z, lower);
-                } else {
-                    chunk.set_block_state(offset_x, y, offset_z, BlockState::GRASS);
-                }
-            }
-        } else if chunk.block_state(offset_x, y, offset_z).is_liquid()
-            && chunk.block_state(offset_x, y - 1, offset_z) == BlockState::GRAVEL
-        {
-            let p = DVec3::new(f64::from(x), y as f64, f64::from(z));
-            let density = fbm(&state.grass, p / 5.0, 4, 2.0, 0.7);
-
-            if density > 0.55 {
-                if density > 0.7 && chunk.block_state(offset_x, y + 1, offset_z).is_liquid() {
-                    let upper = BlockState::TALL_SEAGRASS.set(PropName::Half, PropValue::Upper);
-                    let lower = BlockState::TALL_SEAGRASS.set(PropName::Half, PropValue::Lower);
-
-                    chunk.set_block_state(offset_x, y + 1, offset_z, upper);
-                    chunk.set_block_state(offset_x, y, offset_z, lower);
-                } else {
-                    chunk.set_block_state(offset_x, y, offset_z, BlockState::SEAGRASS);
-                }
-            }
+        // Send the sorted chunks to be loaded.
+        for (_, pos) in to_send {
+            let _ = state.sender.try_send(WorkerMessage::Chunk(pos));
         }
     }
 }
 
-fn has_terrain_at(state: &ChunkWorkerState, p: DVec3) -> bool {
-    let hilly = lerp(0.1, 1.0, noise01(&state.hilly, p / 400.0)).powi(2);
+pub fn inspector_ui(world: &mut World) {
+    // the usual `ResourceInspector` code
+    let egui_context = world
+        .resource_mut::<bevy_egui::EguiContext>()
+        .ctx_mut()
+        .clone();
 
-    let lower = 64.0 + 100.0 * hilly;
-    let upper = lower + 100.0 * hilly;
+    egui::Window::new("Terrain Settings").show(&egui_context, |ui| {
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            bevy_inspector_egui::bevy_inspector::ui_for_resource::<TerrainSettings>(world, ui);
 
-    if p.y <= lower {
-        return true;
-    } else if p.y >= upper {
-        return false;
-    }
+            ui.separator();
 
-    let density = 1.0 - lerpstep(lower, upper, p.y);
+            ui.horizontal(|ui| {
+                if ui.button("Update").clicked() {
+                    let mut update = world.resource_mut::<UpdateTerrainSettings>();
+                    update.0 = true;
+                }
 
-    let n = fbm(&state.density, p / 100.0, 4, 2.0, 0.5);
+                if ui.button("Reset").clicked() {
+                    {
+                        let mut settings = world.resource_mut::<TerrainSettings>();
+                        *settings = TerrainSettings::default();
+                    }
 
-    n < density
+                    let mut update = world.resource_mut::<UpdateTerrainSettings>();
+                    update.0 = true;
+                }
+            });
+        });
+    });
 }
-
-fn lerp(a: f64, b: f64, t: f64) -> f64 { a * (1.0 - t) + b * t }
-
-fn lerpstep(edge0: f64, edge1: f64, x: f64) -> f64 {
-    if x <= edge0 {
-        0.0
-    } else if x >= edge1 {
-        1.0
-    } else {
-        (x - edge0) / (edge1 - edge0)
-    }
-}
-
-fn fbm(noise: &SuperSimplex, p: DVec3, octaves: u32, lacunarity: f64, persistence: f64) -> f64 {
-    let mut freq = 1.0;
-    let mut amp = 1.0;
-    let mut amp_sum = 0.0;
-    let mut sum = 0.0;
-
-    for _ in 0..octaves {
-        let n = noise01(noise, p * freq);
-        sum += n * amp;
-        amp_sum += amp;
-
-        freq *= lacunarity;
-        amp *= persistence;
-    }
-
-    // Scale the output to [0, 1]
-    sum / amp_sum
-}
-
-fn noise01(noise: &SuperSimplex, p: DVec3) -> f64 { (noise.get(p.to_array()) + 1.0) / 2.0 }

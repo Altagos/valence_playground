@@ -1,15 +1,15 @@
 use bevy::prelude::*;
-use bevy_inspector_egui::{
-    bevy_egui::{self},
-    DefaultInspectorConfigPlugin,
-};
+use bevy_inspector_egui::{egui, DefaultInspectorConfigPlugin};
+
+use crate::minecraft::world_gen::inspector_ui as terrain_ui;
 
 pub struct InspectorPlugin;
 
 impl Plugin for InspectorPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(DefaultInspectorConfigPlugin)
-            .add_system(inspector_ui);
+            .add_system(inspector_ui)
+            .add_system(terrain_ui);
     }
 }
 
@@ -23,10 +23,4 @@ fn inspector_ui(world: &mut World, mut disabled: Local<bool>) {
     if *disabled {
         return;
     }
-
-    // the usual `ResourceInspector` code
-    let _egui_context = world
-        .resource_mut::<bevy_egui::EguiContext>()
-        .ctx_mut()
-        .clone();
 }
