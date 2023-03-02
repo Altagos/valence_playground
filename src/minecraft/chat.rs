@@ -89,12 +89,12 @@ fn interpret_command(mut clients: Query<&mut Client>, mut events: EventReader<Co
             };
 
             if mode == GameMode::Spectator {
-                let mut player = client.player_mut();
+                let player = client.player_mut();
                 player.set_invisible(true);
                 player.set_no_gravity(true);
                 player.set_silent(true);
             } else {
-                let mut player = client.player_mut();
+                let player = client.player_mut();
                 player.set_invisible(false);
                 player.set_no_gravity(false);
                 player.set_silent(false);

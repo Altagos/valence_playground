@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_inspector_egui::{egui, DefaultInspectorConfigPlugin};
+use bevy_inspector_egui::{DefaultInspectorConfigPlugin};
 
 use crate::minecraft::world_gen::inspector_ui as terrain_ui;
 

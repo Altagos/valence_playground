@@ -5,11 +5,10 @@ use std::{
     num::NonZeroUsize,
     sync::{Arc, Mutex},
     thread,
-    time::Instant,
 };
 
 use bevy::prelude::{Query, ResMut, Resource, World};
-use bevy_inspector_egui::{bevy_egui, egui, quick::ResourceInspectorPlugin};
+use bevy_inspector_egui::{bevy_egui, egui};
 use flume::{Receiver, Sender};
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::iproduct;
