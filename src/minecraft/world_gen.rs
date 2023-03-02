@@ -13,10 +13,12 @@ use flume::{Receiver, Sender};
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::iproduct;
 use lru::LruCache;
-use noise::{NoiseFn, SuperSimplex};
+use noise::SuperSimplex;
 use valence::{bevy_app::Plugin, prelude::*, server::Server};
 
-use self::chunk_worker::*;
+use self::chunk_worker::{
+    chunk_worker, gen_chunk, ChunkWorkerState, TerrainSettings, WorkerMessage, WorkerResponse,
+};
 use crate::{VPSystems, CONFIG, SECTION_COUNT, SPAWN_POS};
 
 /// The order in which chunks should be processed by the thread pool. Smaller
@@ -90,7 +92,7 @@ fn setup(world: &mut World) {
 
     {
         let pb = ProgressBar::new(num_pregen_chunks as u64)
-            .with_message(format!("Pregenerating chunks..."));
+            .with_message("Pregenerating chunks...".to_string());
         pb.set_style(
             ProgressStyle::with_template(
                 "{spinner:.green} [{elapsed_precise}] [{bar:.cyan/blue}] {pos}/{len} {msg} ({eta})",
@@ -99,7 +101,7 @@ fn setup(world: &mut World) {
             .progress_chars("#>-"),
         );
 
-        for (x, z) in iproduct!(pregen_chunks.clone(), pregen_chunks.clone()) {
+        for (x, z) in iproduct!(pregen_chunks.clone(), pregen_chunks) {
             let pos = ChunkPos::new(x, z);
             let mut chunk = Chunk::new(SECTION_COUNT);
 
@@ -131,10 +133,10 @@ fn setup(world: &mut World) {
             let block = spawn_chunk.block_state(0, y, 0);
             if block.is_air() {
                 y -= 1;
-            } else if y <= 0 {
+            } else if y == 0 {
                 break;
             } else {
-                y = y - 50; // Blocks below 0 are treated as a bove 0
+                y -= 50; // Blocks below 0 are treated as a bove 0
                 *SPAWN_POS.lock().unwrap() = DVec3::new(0.0, y as f64, 0.0);
                 debug!(target: "minecraft::world_gen", "Spawn height: {y}, Spawn block: {}", block);
                 break;
@@ -300,7 +302,7 @@ fn set_terrain_settings(
 
         for (pos, priority) in &mut state.pending.iter_mut() {
             if let Some(pri) = priority.take() {
-                to_send.push((pri, pos.clone()));
+                to_send.push((pri, *pos));
             }
         }
 

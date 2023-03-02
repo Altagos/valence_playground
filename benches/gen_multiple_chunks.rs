@@ -4,7 +4,9 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use lru::LruCache;
 use noise::SuperSimplex;
 use valence::{prelude::Chunk, view::ChunkPos};
-use valence_playground::minecraft::world_gen::{gen_chunk, gen_chunk_fors, ChunkWorkerState};
+use valence_playground::minecraft::world_gen::chunk_worker::{
+    gen_chunk, gen_chunk_fors, ChunkWorkerState, TerrainSettings,
+};
 
 fn create_state(seed: u32) -> ChunkWorkerState {
     let (finished_sender, _finished_receiver) = flume::unbounded();
@@ -20,6 +22,7 @@ fn create_state(seed: u32) -> ChunkWorkerState {
         stone: SuperSimplex::new(seed.wrapping_add(2)),
         gravel: SuperSimplex::new(seed.wrapping_add(3)),
         grass: SuperSimplex::new(seed.wrapping_add(4)),
+        settings: TerrainSettings::default(),
     }
 }
 

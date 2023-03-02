@@ -32,9 +32,9 @@ pub enum ConnectionMode {
     },
 }
 
-impl Into<ValenceConnectionMode> for ConnectionMode {
-    fn into(self) -> ValenceConnectionMode {
-        match self {
+impl From<ConnectionMode> for ValenceConnectionMode {
+    fn from(val: ConnectionMode) -> Self {
+        match val {
             ConnectionMode::Online => ValenceConnectionMode::Online {
                 prevent_proxy_connections: false,
             },

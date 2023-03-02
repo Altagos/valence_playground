@@ -13,7 +13,7 @@ pub struct WorldConfig {
 impl Default for WorldConfig {
     fn default() -> Self {
         Self {
-            seed: Default::default(),
+            seed: Seed::default(),
             chunks_cached: 4000,
             spawn: None,
             pregen_chunks: -12..=12,
@@ -30,9 +30,9 @@ pub enum Seed {
     Set(u32),
 }
 
-impl Into<u32> for Seed {
-    fn into(self) -> u32 {
-        match self {
+impl From<Seed> for u32 {
+    fn from(val: Seed) -> Self {
+        match val {
             Seed::Random => rand::random(),
             Seed::Set(s) => s,
         }

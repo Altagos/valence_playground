@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_inspector_egui::{DefaultInspectorConfigPlugin};
+use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 
 use crate::minecraft::world_gen::inspector_ui as terrain_ui;
 
@@ -21,6 +21,6 @@ fn inspector_ui(world: &mut World, mut disabled: Local<bool>) {
         *disabled = !*disabled;
     }
     if *disabled {
-        return;
+        // noting at the moment
     }
 }

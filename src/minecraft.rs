@@ -20,17 +20,7 @@ impl Plugin for MinecraftPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         use crate::minecraft::callbacks::VPCallbacks;
 
-        let connection_mode;
-
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "online")] {
-                connection_mode = ConnectionMode::Online {
-                    prevent_proxy_connections: false,
-                }
-            } else {
-                connection_mode = ConnectionMode::Offline
-            }
-        }
+        let connection_mode = CONFIG.server.connection_mode.clone().into();
 
         app.add_plugin(ServerPlugin::new(VPCallbacks).with_connection_mode(connection_mode))
             .add_plugin(BuildingPlugin)
@@ -55,7 +45,7 @@ fn init_clients(
     mut player_list: ResMut<PlayerList>,
 ) {
     let instance = instances.get_single().unwrap();
-    let spawn = SPAWN_POS.lock().unwrap().clone();
+    let spawn = *SPAWN_POS.lock().unwrap();
     let mut new_players = vec![];
 
     for mut client in &mut clients {
@@ -93,7 +83,7 @@ fn init_clients(
 
     clients.par_for_each_mut(16, |mut c| {
         for name in &new_players {
-            c.send_message(name.to_owned() + " joined".to_string().color(Color::YELLOW))
+            c.send_message(name.clone() + " joined".to_string().color(Color::YELLOW));
         }
     });
 }
@@ -113,10 +103,10 @@ fn player_left(mut clients: Query<&mut Client>) {
     for client in &clients {
         if client.is_disconnected() {
             let username = match client.player().get_custom_name() {
-                Some(u) => u.to_owned(),
+                Some(u) => u.clone(),
                 None => client.username().to_string().into_text(),
             };
-            players.push(username.to_owned());
+            players.push(username.clone());
             info!(target: "minecraft", "{} left", client.username().to_string());
             *PLAYER_COUNT.lock().unwrap() -= 1;
         }
@@ -124,7 +114,7 @@ fn player_left(mut clients: Query<&mut Client>) {
 
     clients.par_for_each_mut(16, |mut c| {
         for name in &players {
-            c.send_message(name.to_owned() + " left".to_string().color(Color::YELLOW))
+            c.send_message(name.clone() + " left".to_string().color(Color::YELLOW));
         }
     });
 }
@@ -132,7 +122,7 @@ fn player_left(mut clients: Query<&mut Client>) {
 fn set_view_distance(mut clients: Query<&mut Client>) {
     clients.par_for_each_mut(16, |mut c| {
         if c.view_distance() > CONFIG.server.max_view_distance {
-            c.set_view_distance(CONFIG.server.max_view_distance)
+            c.set_view_distance(CONFIG.server.max_view_distance);
         }
     });
 }

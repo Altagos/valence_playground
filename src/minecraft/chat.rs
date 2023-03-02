@@ -50,7 +50,7 @@ fn chat_message(
 
         info!(target: "minecraft::chat", "{username}: {}", message);
 
-        let formatted = username + ": ".into_text() + message.into_text();
+        let formatted = username + ": ".into_text() + message.color(Color::WHITE);
 
         clients.par_for_each_mut(16, |mut client| {
             client.send_message(formatted.clone());
@@ -129,7 +129,7 @@ pub fn gui_chat_window(
             display_messages.push((username, m.message.to_string()));
         }
         Message::ServerMessage(msg) => {
-            display_messages.push(("Server".to_string(), msg.to_string()))
+            display_messages.push(("Server".to_string(), msg.to_string()));
         }
     });
 

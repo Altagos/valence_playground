@@ -65,6 +65,7 @@ pub struct FBMSettings {
     pub persistence: f64,
 }
 
+#[allow(clippy::must_use_candidate)]
 impl FBMSettings {
     pub fn call(&self, noise: &SuperSimplex, p: DVec3) -> f64 {
         fbm(
@@ -108,6 +109,8 @@ pub struct ChunkWorkerState {
     pub grass: SuperSimplex,
 }
 
+/// # Panics
+/// - if state is not accesible
 pub fn chunk_worker(state: Arc<Mutex<ChunkWorkerState>>) {
     let mut state = state.lock().unwrap();
     while let Ok(msg) = state.receiver.recv() {
@@ -118,7 +121,7 @@ pub fn chunk_worker(state: Arc<Mutex<ChunkWorkerState>>) {
                 let start = Instant::now();
 
                 if state.cache.contains(&pos) {
-                    chunk = state.cache.get_mut(&pos).unwrap().to_owned();
+                    chunk = state.cache.get_mut(&pos).unwrap().clone();
                     cached = true;
                 } else {
                     gen_chunk(&state, &mut chunk, pos);
@@ -142,7 +145,7 @@ pub fn chunk_worker(state: Arc<Mutex<ChunkWorkerState>>) {
                 debug!(target: "minecraft::world_gen", "Updated terrain settings: {new_settings:?}");
 
                 if new_settings.seed != state.settings.seed {
-                    let seed = new_settings.seed.clone();
+                    let seed = new_settings.seed;
                     state.density = SuperSimplex::new(seed);
                     state.hilly = SuperSimplex::new(seed.wrapping_add(1));
                     state.stone = SuperSimplex::new(seed.wrapping_add(2));
@@ -201,7 +204,7 @@ pub fn gen_block(
 
         let p = DVec3::new(f64::from(x), f64::from(y), f64::from(z));
 
-        let block = if has_terrain_at(&state, p) {
+        let block = if has_terrain_at(state, p) {
             let gravel_fbm = state.settings.gravel_height.call(&state.gravel, p);
             let gravel_height = WATER_HEIGHT - 1 - (gravel_fbm * 6.0).floor() as i32;
 

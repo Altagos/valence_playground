@@ -1,10 +1,14 @@
+#![feature(stmt_expr_attributes)]
 #![warn(clippy::pedantic)]
-#![allow(clippy::module_name_repetitions)]
-#![allow(clippy::needless_pass_by_value)]
-#![allow(clippy::cast_precision_loss)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_possible_wrap)]
-#![allow(clippy::cast_sign_loss)]
+#![allow(
+    clippy::module_name_repetitions,
+    clippy::needless_pass_by_value,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::let_underscore_untyped
+)]
 
 pub mod config;
 pub mod gui;
