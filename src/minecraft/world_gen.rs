@@ -16,9 +16,35 @@ use valence::{bevy_app::Plugin, prelude::*, server::Server};
 
 use crate::{VPSystems, CONFIG, SECTION_COUNT, SPAWN_POS};
 
+/// The order in which chunks should be processed by the thread pool. Smaller
+/// values are sent first.
+pub type Priority = u64;
+
+/// Chunk Worker sender
+type CWSender = Sender<WorkerResponse>;
+
+/// Chunk Worker receiver
+type CWReceiver = Receiver<WorkerMessage>;
+
+/// World Gen sender
+type WGSender = Sender<WorkerMessage>;
+
+/// World Gen receiver
+type WGReceiver = Receiver<WorkerResponse>;
+
+pub enum WorkerMessage {
+    Chunk(ChunkPos),
+    GetTerrainSettings,
+}
+
+pub enum WorkerResponse {
+    Chunk(ChunkPos, Chunk),
+    GetTerrainSettings,
+}
+
 pub struct ChunkWorkerState {
-    pub sender: Sender<(ChunkPos, Chunk)>,
-    pub receiver: Receiver<ChunkPos>,
+    pub sender: CWSender,
+    pub receiver: CWReceiver,
     pub cache: LruCache<ChunkPos, Chunk>,
     // Noise functions
     pub density: SuperSimplex,
@@ -33,13 +59,9 @@ pub struct WorldGenState {
     /// Chunks that need to be generated. Chunks without a priority have already
     /// been sent to the thread pool.
     pending: HashMap<ChunkPos, Option<Priority>>,
-    sender: Sender<ChunkPos>,
-    receiver: Receiver<(ChunkPos, Chunk)>,
+    sender: WGSender,
+    receiver: WGReceiver,
 }
-
-/// The order in which chunks should be processed by the thread pool. Smaller
-/// values are sent first.
-pub type Priority = u64;
 
 pub struct WorldGenPlugin;
 
@@ -101,7 +123,7 @@ fn setup(world: &mut World) {
             gen_chunk(&state, &mut chunk, pos);
 
             state.cache.push(pos, chunk.clone());
-            let _ = state.sender.try_send((pos, chunk));
+            let _ = state.sender.try_send(WorkerResponse::Chunk(pos, chunk));
             pb.inc(1);
 
             pending_chunks.insert(pos, Some((x + z) as u64));
@@ -218,9 +240,14 @@ fn send_recv_chunks(mut instances: Query<&mut Instance>, state: ResMut<WorldGenS
     let state = state.into_inner();
 
     // Insert the chunks that are finished generating into the instance.
-    for (pos, chunk) in state.receiver.drain() {
-        instance.insert_chunk(pos, chunk);
-        assert!(state.pending.remove(&pos).is_some());
+    for response in state.receiver.drain() {
+        match response {
+            WorkerResponse::Chunk(pos, chunk) => {
+                instance.insert_chunk(pos, chunk);
+                assert!(state.pending.remove(&pos).is_some());
+            }
+            WorkerResponse::GetTerrainSettings => todo!("Not yet implemented"),
+        }
     }
 
     // Collect all the new chunks that need to be loaded this tick.
@@ -237,30 +264,35 @@ fn send_recv_chunks(mut instances: Query<&mut Instance>, state: ResMut<WorldGenS
 
     // Send the sorted chunks to be loaded.
     for (_, pos) in to_send {
-        let _ = state.sender.try_send(*pos);
+        let _ = state.sender.try_send(WorkerMessage::Chunk(*pos));
     }
 }
 
 fn chunk_worker(state: Arc<Mutex<ChunkWorkerState>>) {
     let mut state = state.lock().unwrap();
-    while let Ok(pos) = state.receiver.recv() {
-        let mut chunk = Chunk::new(SECTION_COUNT);
-        let cached;
-        let start = Instant::now();
+    while let Ok(msg) = state.receiver.recv() {
+        match msg {
+            WorkerMessage::Chunk(pos) => {
+                let mut chunk = Chunk::new(SECTION_COUNT);
+                let cached;
+                let start = Instant::now();
 
-        if state.cache.contains(&pos) {
-            chunk = state.cache.get_mut(&pos).unwrap().to_owned();
-            cached = true;
-        } else {
-            gen_chunk(&state, &mut chunk, pos);
-            state.cache.push(pos, chunk.clone());
-            cached = false;
+                if state.cache.contains(&pos) {
+                    chunk = state.cache.get_mut(&pos).unwrap().to_owned();
+                    cached = true;
+                } else {
+                    gen_chunk(&state, &mut chunk, pos);
+                    state.cache.push(pos, chunk.clone());
+                    cached = false;
+                }
+
+                let duration = start.elapsed();
+                trace!(target: "minecraft::world_gen", cached = cached,"Generated chunk at: {pos:?} ({duration:?})");
+
+                let _ = state.sender.try_send(WorkerResponse::Chunk(pos, chunk));
+            }
+            WorkerMessage::GetTerrainSettings => todo!("Not yet implemented"),
         }
-
-        let duration = start.elapsed();
-        trace!(target: "minecraft::world_gen", cached = cached,"Generated chunk at: {pos:?} ({duration:?})");
-
-        let _ = state.sender.try_send((pos, chunk));
     }
 }
 

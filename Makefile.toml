@@ -10,7 +10,7 @@ echo "Build and started"
 
 [tasks.r]
 command = "cargo"
-args = ["run"]
+args = ["r", "-r"]
 
 [tasks.no_gui]
 command = "cargo"
