@@ -1,3 +1,6 @@
+[env]
+RUSTFLAGS="--cfg tokio_unstable"
+
 [tasks.nixos_build]
 script = '''
 git pull

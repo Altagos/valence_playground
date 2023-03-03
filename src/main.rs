@@ -13,12 +13,13 @@ use chrono::Local;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use valence_playground::{gui::GuiPlugin, minecraft::MinecraftPlugin};
 
-pub fn main() {
+#[tokio::main]
+async fn main() {
     dotenv::dotenv().ok();
 
     if let Ok(path) = std::env::var("RUST_LOG_PATH") {
         let appender = tracing_appender::rolling::never(
-            path,
+            &path,
             format!("{}.log", Local::now().format("%d.%m.%Y_%H:%M:%S")),
         );
         let (non_blocking, _guard) = tracing_appender::non_blocking(appender);
@@ -33,15 +34,22 @@ pub fn main() {
                     .with_ansi(false),
             )
             .init();
+
+        tracing::info!("Logfiles are located at: {path}");
+
+        App::new()
+            .add_plugin(MinecraftPlugin)
+            .add_plugin(GuiPlugin)
+            .run();
     } else {
         tracing_subscriber::registry()
             .with(EnvFilter::from_default_env())
             .with(fmt::layer().with_writer(io::stdout))
             .init();
-    }
 
-    App::new()
-        .add_plugin(MinecraftPlugin)
-        .add_plugin(GuiPlugin)
-        .run();
+        App::new()
+            .add_plugin(MinecraftPlugin)
+            .add_plugin(GuiPlugin)
+            .run();
+    }
 }

@@ -1,8 +1,9 @@
 use std::{
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
     time::Instant,
 };
 
+use anyhow::Result;
 use bevy::prelude::{Reflect, Resource};
 use bevy_inspector_egui::{prelude::ReflectInspectorOptions, InspectorOptions};
 use flume::{Receiver, Sender};
@@ -116,58 +117,78 @@ pub struct ChunkWorkerState {
 
 /// # Panics
 /// - if state is not accesible
-pub fn chunk_worker(worker: Arc<Mutex<ChunkWorker>>) {
-    let mut worker = worker.lock().unwrap();
-    while let Ok(msg) = worker.receiver.recv() {
+pub fn chunk_worker(worker: Arc<Mutex<ChunkWorker>>, worker_name: String) -> Result<()> {
+    let mut w = worker.lock().unwrap();
+
+    while let Ok(msg) = w.receiver.recv() {
         match msg {
             WorkerMessage::Chunk(pos) => {
-                let chunk;
-                let cached;
-                let start = Instant::now();
-
-                if worker.cache.contains(&pos) {
-                    chunk = worker.cache.get_mut(&pos).unwrap().clone();
-                    cached = true;
-                } else {
-                    chunk = gen_chunk(&worker.state, pos);
-                    worker.cache.push(pos, chunk.clone());
-                    cached = false;
-                }
-
-                let duration = start.elapsed();
-                let settings = &worker.state.settings;
-                trace!(target: "minecraft::world_gen", cached = cached,"Generated chunk at: {pos:?} ({duration:?}) settings = {settings:?}");
-
-                let _ = worker.sender.try_send(WorkerResponse::Chunk(pos, chunk));
+                handle_chunk(&mut w, &worker_name, pos)?;
             }
             WorkerMessage::GetTerrainSettings => {
-                let settings = worker.state.settings.clone();
-                let _ = worker
+                let settings = w.state.settings.clone();
+                let _ = w
                     .sender
                     .try_send(WorkerResponse::GetTerrainSettings(settings));
             }
             WorkerMessage::SetTerrainSettings(new_settings) => {
-                debug!(target: "minecraft::world_gen", "Updated terrain settings: {new_settings:?}");
+                debug!(target: "minecraft::world_gen::worker", "Updated terrain settings: {new_settings:?}");
 
-                if new_settings.seed != worker.state.settings.seed {
+                if new_settings.seed != w.state.settings.seed {
                     let seed = new_settings.seed;
-                    worker.state.density = SuperSimplex::new(seed);
-                    worker.state.hilly = SuperSimplex::new(seed.wrapping_add(1));
-                    worker.state.stone = SuperSimplex::new(seed.wrapping_add(2));
-                    worker.state.gravel = SuperSimplex::new(seed.wrapping_add(3));
-                    worker.state.grass = SuperSimplex::new(seed.wrapping_add(4));
+                    w.state.density = SuperSimplex::new(seed);
+                    w.state.hilly = SuperSimplex::new(seed.wrapping_add(1));
+                    w.state.stone = SuperSimplex::new(seed.wrapping_add(2));
+                    w.state.gravel = SuperSimplex::new(seed.wrapping_add(3));
+                    w.state.grass = SuperSimplex::new(seed.wrapping_add(4));
                 }
 
-                worker.state.settings = new_settings;
-                worker.cache.clear();
-                debug!(target: "minecraft::world_gen", "Cache emptied");
+                w.state.settings = new_settings;
+                w.cache.clear();
+                debug!(target: "minecraft::world_gen::worker", "Cache emptied");
             }
             WorkerMessage::EmptyCache => {
-                worker.cache.clear();
-                debug!(target: "minecraft::world_gen", "Cache emptied");
+                w.cache.clear();
+                debug!(target: "minecraft::world_gen::worker", "Cache emptied");
             }
         }
     }
+
+    anyhow::Ok(())
+}
+
+fn handle_chunk(
+    worker: &mut MutexGuard<ChunkWorker>,
+    worker_name: &str,
+    pos: ChunkPos,
+) -> Result<()> {
+    let chunk;
+    let cached;
+    let start = Instant::now();
+
+    if worker.cache.contains(&pos) {
+        chunk = worker.cache.get_mut(&pos).unwrap().clone();
+        cached = true;
+    } else {
+        chunk = gen_chunk(&worker.state, pos);
+
+        // chunk = gen_chunk(&worker.state, pos);
+        worker.cache.push(pos, chunk.clone());
+        cached = false;
+    }
+
+    let _ = worker.sender.try_send(WorkerResponse::Chunk(pos, chunk));
+
+    let duration = start.elapsed();
+    let settings = &worker.state.settings;
+    trace!(
+        target: "minecraft::world_gen::worker",
+        cached = cached,
+        worker = worker_name,
+        "Generated chunk at: {pos:?} ({duration:?}) settings = {settings:?}"
+    );
+
+    anyhow::Ok(())
 }
 
 #[inline]

@@ -6,7 +6,6 @@ use std::{
     num::NonZeroUsize,
     process,
     sync::{Arc, Mutex},
-    thread,
 };
 
 use bevy::prelude::{Query, ResMut, Resource, World};
@@ -175,10 +174,15 @@ fn setup(world: &mut World) {
         cache,
         state,
     }));
-
-    for _ in 0..thread::available_parallelism().unwrap().get() {
+    let metrics = tokio::runtime::Handle::current().metrics();
+    for i in 0..metrics.num_workers() {
         let worker_clone = Arc::clone(&worker);
-        thread::spawn(move || chunk_worker(worker_clone));
+
+        let _ = tokio::task::Builder::new()
+            .name(&format!("ChunkWorker_{}", i))
+            .spawn(async move { chunk_worker(worker_clone, format!("ChunkWorker_{}", i)) });
+
+        debug!(target: "minecraft::world_gen", "Started Chunk Worker {}", i);
     }
 
     world.insert_resource(WorldGenState {
