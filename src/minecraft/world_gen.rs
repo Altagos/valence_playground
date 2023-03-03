@@ -3,6 +3,7 @@ pub mod chunk_worker;
 use std::{
     collections::{hash_map::Entry, HashMap},
     num::NonZeroUsize,
+    process,
     sync::{Arc, Mutex},
     thread,
 };
@@ -10,16 +11,17 @@ use std::{
 use bevy::prelude::{Query, ResMut, Resource, World};
 use bevy_inspector_egui::{bevy_egui, egui};
 use flume::{Receiver, Sender};
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{ProgressBar, ProgressIterator, ProgressStyle};
 use itertools::iproduct;
 use lru::LruCache;
 use noise::SuperSimplex;
+use rayon::prelude::*;
 use valence::{bevy_app::Plugin, prelude::*, server::Server};
 
 use self::chunk_worker::{
     chunk_worker, gen_chunk, ChunkWorkerState, TerrainSettings, WorkerMessage, WorkerResponse,
 };
-use crate::{VPLabel, CONFIG, SECTION_COUNT, SPAWN_POS};
+use crate::{minecraft::world_gen::chunk_worker::ChunkWorker, VPLabel, CONFIG, SPAWN_POS};
 
 /// The order in which chunks should be processed by the thread pool. Smaller
 /// values are sent first.
@@ -72,14 +74,18 @@ fn setup(world: &mut World) {
         num_pregen_chunks += 1;
     }
 
+    if num_pregen_chunks > CONFIG.world.chunks_cached {
+        error!(target: "minecraft::world_gen",
+            "Number of pregenerated chunks is higher than the chunk cache size. Please lower the \
+             range of pregenerated chunks!"
+        );
+        process::exit(0);
+    }
+
     let (finished_sender, finished_receiver) = flume::unbounded();
     let (pending_sender, pending_receiver) = flume::unbounded();
-    let cache = LruCache::new(NonZeroUsize::new(CONFIG.world.chunks_cached).unwrap());
-
-    let mut state = ChunkWorkerState {
-        sender: finished_sender,
-        receiver: pending_receiver,
-        cache,
+    let mut cache = LruCache::new(NonZeroUsize::new(CONFIG.world.chunks_cached).unwrap());
+    let state = ChunkWorkerState {
         settings: TerrainSettings::default(),
         density: SuperSimplex::new(seed),
         hilly: SuperSimplex::new(seed.wrapping_add(1)),
@@ -89,37 +95,48 @@ fn setup(world: &mut World) {
     };
 
     let mut pending_chunks = HashMap::new();
-
-    {
-        let pb = ProgressBar::new(num_pregen_chunks as u64)
-            .with_message("Pregenerating chunks...".to_string());
-        pb.set_style(
-            ProgressStyle::with_template(
-                "{spinner:.green} [{elapsed_precise}] [{bar:.cyan/blue}] {pos}/{len} {msg} ({eta})",
-            )
-            .unwrap()
-            .progress_chars("#>-"),
-        );
-
-        for (x, z) in iproduct!(pregen_chunks.clone(), pregen_chunks) {
-            let pos = ChunkPos::new(x, z);
-            let mut chunk = Chunk::new(SECTION_COUNT);
-
-            gen_chunk(&state, &mut chunk, pos);
-
-            state.cache.push(pos, chunk.clone());
-            let _ = state.sender.try_send(WorkerResponse::Chunk(pos, chunk));
-            pb.inc(1);
-
-            pending_chunks.insert(pos, Some((x + z) as u64));
-        }
-
-        pb.finish();
-        pb.set_message("Pregeneration complete");
+    for (x, z) in iproduct!(pregen_chunks.clone(), pregen_chunks.clone()) {
+        let pos = ChunkPos::new(x, z);
+        pending_chunks.insert(pos, Some((x + z) as u64));
     }
 
-    let spawn_chunk = state
-        .cache
+    let pb = ProgressBar::new(num_pregen_chunks as u64)
+        .with_message("Pregenerating chunks...".to_string());
+
+    pb.set_style(
+        ProgressStyle::with_template(
+            "{spinner:.green} [{elapsed_precise}] [{bar:.cyan/blue}] {pos}/{len} {msg} ({eta})",
+        )
+        .unwrap()
+        .progress_chars("#>-"),
+    );
+
+    // let state = Arcstate));
+    let state_clone = Arc::from(state.clone());
+
+    let chunks = iproduct!(pregen_chunks.clone(), pregen_chunks)
+        .progress_with(pb.clone())
+        .par_bridge()
+        .map(move |(x, z)| {
+            let pos = ChunkPos::new(x, z);
+
+            // let state = &state_clone;
+            let chunk = gen_chunk(&state_clone, pos);
+            // state.cache.push(pos, chunk.clone());
+            // let _ = state.sender.try_send(WorkerResponse::Chunk(pos, chunk));
+            (pos, chunk)
+        })
+        .collect::<Vec<(ChunkPos, Chunk)>>();
+
+    chunks.iter().for_each(|(pos, chunk)| {
+        cache.push(pos.to_owned(), chunk.to_owned());
+    });
+
+    drop(chunks);
+
+    pb.finish_with_message("Chunks generated");
+
+    let spawn_chunk = cache
         .get(&ChunkPos::new(0, 0))
         .expect("Should be generated");
     let mut y = spawn_chunk.section_count() * 16 - 1;
@@ -151,10 +168,16 @@ fn setup(world: &mut World) {
     //
     // If your chunk generation algorithm is inexpensive then there's no need to do
     // this.
-    let state = Arc::new(Mutex::new(state));
+    let worker = Arc::from(Mutex::from(ChunkWorker {
+        sender: finished_sender,
+        receiver: pending_receiver,
+        cache,
+        state,
+    }));
+
     for _ in 0..thread::available_parallelism().unwrap().get() {
-        let state = state.clone();
-        thread::spawn(move || chunk_worker(state));
+        let worker_clone = Arc::clone(&worker);
+        thread::spawn(move || chunk_worker(worker_clone));
     }
 
     world.insert_resource(WorldGenState {

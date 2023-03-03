@@ -96,10 +96,15 @@ impl FBMSettings {
     }
 }
 
-pub struct ChunkWorkerState {
+pub struct ChunkWorker {
     pub sender: CWSender,
     pub receiver: CWReceiver,
     pub cache: LruCache<ChunkPos, Chunk>,
+    pub state: ChunkWorkerState,
+}
+
+#[derive(Clone)]
+pub struct ChunkWorkerState {
     pub settings: TerrainSettings,
     // Noise functions
     pub density: SuperSimplex,
@@ -111,54 +116,54 @@ pub struct ChunkWorkerState {
 
 /// # Panics
 /// - if state is not accesible
-pub fn chunk_worker(state: Arc<Mutex<ChunkWorkerState>>) {
-    let mut state = state.lock().unwrap();
-    while let Ok(msg) = state.receiver.recv() {
+pub fn chunk_worker(worker: Arc<Mutex<ChunkWorker>>) {
+    let mut worker = worker.lock().unwrap();
+    while let Ok(msg) = worker.receiver.recv() {
         match msg {
             WorkerMessage::Chunk(pos) => {
-                let mut chunk = Chunk::new(SECTION_COUNT);
+                let chunk;
                 let cached;
                 let start = Instant::now();
 
-                if state.cache.contains(&pos) {
-                    chunk = state.cache.get_mut(&pos).unwrap().clone();
+                if worker.cache.contains(&pos) {
+                    chunk = worker.cache.get_mut(&pos).unwrap().clone();
                     cached = true;
                 } else {
-                    gen_chunk(&state, &mut chunk, pos);
-                    state.cache.push(pos, chunk.clone());
+                    chunk = gen_chunk(&worker.state, pos);
+                    worker.cache.push(pos, chunk.clone());
                     cached = false;
                 }
 
                 let duration = start.elapsed();
-                let settings = &state.settings;
+                let settings = &worker.state.settings;
                 trace!(target: "minecraft::world_gen", cached = cached,"Generated chunk at: {pos:?} ({duration:?}) settings = {settings:?}");
 
-                let _ = state.sender.try_send(WorkerResponse::Chunk(pos, chunk));
+                let _ = worker.sender.try_send(WorkerResponse::Chunk(pos, chunk));
             }
             WorkerMessage::GetTerrainSettings => {
-                let settings = state.settings.clone();
-                let _ = state
+                let settings = worker.state.settings.clone();
+                let _ = worker
                     .sender
                     .try_send(WorkerResponse::GetTerrainSettings(settings));
             }
             WorkerMessage::SetTerrainSettings(new_settings) => {
                 debug!(target: "minecraft::world_gen", "Updated terrain settings: {new_settings:?}");
 
-                if new_settings.seed != state.settings.seed {
+                if new_settings.seed != worker.state.settings.seed {
                     let seed = new_settings.seed;
-                    state.density = SuperSimplex::new(seed);
-                    state.hilly = SuperSimplex::new(seed.wrapping_add(1));
-                    state.stone = SuperSimplex::new(seed.wrapping_add(2));
-                    state.gravel = SuperSimplex::new(seed.wrapping_add(3));
-                    state.grass = SuperSimplex::new(seed.wrapping_add(4));
+                    worker.state.density = SuperSimplex::new(seed);
+                    worker.state.hilly = SuperSimplex::new(seed.wrapping_add(1));
+                    worker.state.stone = SuperSimplex::new(seed.wrapping_add(2));
+                    worker.state.gravel = SuperSimplex::new(seed.wrapping_add(3));
+                    worker.state.grass = SuperSimplex::new(seed.wrapping_add(4));
                 }
 
-                state.settings = new_settings;
-                state.cache.clear();
+                worker.state.settings = new_settings;
+                worker.cache.clear();
                 debug!(target: "minecraft::world_gen", "Cache emptied");
             }
             WorkerMessage::EmptyCache => {
-                state.cache.clear();
+                worker.cache.clear();
                 debug!(target: "minecraft::world_gen", "Cache emptied");
             }
         }
@@ -166,25 +171,33 @@ pub fn chunk_worker(state: Arc<Mutex<ChunkWorkerState>>) {
 }
 
 #[inline]
-pub fn gen_chunk(state: &ChunkWorkerState, chunk: &mut Chunk, pos: ChunkPos) {
+pub fn gen_chunk(state: &ChunkWorkerState, pos: ChunkPos) -> Chunk {
+    let mut chunk = Chunk::new(SECTION_COUNT);
+
     for (offset_z, offset_x) in iproduct!(0..16, 0..16) {
         let x = offset_x as i32 + pos.x * 16;
         let z = offset_z as i32 + pos.z * 16;
 
-        gen_block(state, chunk, x, z, offset_x, offset_z);
+        gen_block(state, &mut chunk, x, z, offset_x, offset_z);
     }
+
+    chunk
 }
 
 #[inline]
-pub fn gen_chunk_fors(state: &ChunkWorkerState, chunk: &mut Chunk, pos: ChunkPos) {
+pub fn gen_chunk_fors(state: &ChunkWorkerState, pos: ChunkPos) -> Chunk {
+    let mut chunk = Chunk::new(SECTION_COUNT);
+
     for offset_z in 0..16 {
         for offset_x in 0..16 {
             let x = offset_x as i32 + pos.x * 16;
             let z = offset_z as i32 + pos.z * 16;
 
-            gen_block(state, chunk, x, z, offset_x, offset_z);
+            gen_block(state, &mut chunk, x, z, offset_x, offset_z);
         }
     }
+
+    chunk
 }
 
 pub fn gen_block(
