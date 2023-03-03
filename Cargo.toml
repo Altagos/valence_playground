@@ -57,7 +57,7 @@ name = "compare_gen_chunk"
 harness = false
 
 [features]
-default = [ "minecraft", "online", "gui" ]
+default = ["minecraft", "online", "gui"]
 minecraft = []
 gui = []
 online = []

@@ -16,7 +16,7 @@ impl Default for WorldConfig {
             seed: Seed::default(),
             chunks_cached: 4000,
             spawn: None,
-            pregen_chunks: -12..=12,
+            pregen_chunks: -22..=22,
         }
     }
 }

@@ -2,6 +2,7 @@ pub mod chunk_worker;
 
 use std::{
     collections::{hash_map::Entry, HashMap},
+    mem::size_of,
     num::NonZeroUsize,
     process,
     sync::{Arc, Mutex},
@@ -68,13 +69,11 @@ fn setup(world: &mut World) {
 
     info!(target: "minecraft::world_gen", "Current seed: {seed}");
 
-    let mut num_pregen_chunks = 0;
     let pregen_chunks = CONFIG.world.pregen_chunks.clone();
-    for (..) in iproduct!(pregen_chunks.clone(), pregen_chunks.clone()) {
-        num_pregen_chunks += 1;
-    }
+    let num_pregen_chunks = pregen_chunks.clone().max().unwrap() * 2 + 1;
+    let num_pregen_chunks = num_pregen_chunks * num_pregen_chunks;
 
-    if num_pregen_chunks > CONFIG.world.chunks_cached {
+    if num_pregen_chunks > CONFIG.world.chunks_cached.try_into().unwrap() {
         error!(target: "minecraft::world_gen",
             "Number of pregenerated chunks is higher than the chunk cache size. Please lower the \
              range of pregenerated chunks!"
@@ -160,6 +159,8 @@ fn setup(world: &mut World) {
             }
         }
     }
+
+    println!("{}", size_of::<LruCache<ChunkPos, Chunk>>());
 
     // Chunks are generated in a thread pool for parallelism and to avoid blocking
     // the main tick loop. You can use your thread pool of choice here (rayon,
