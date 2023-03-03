@@ -31,7 +31,7 @@ lazy_static! {
     pub static ref CONFIG: Config = Config::from_current_dir().unwrap();
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, SystemLabel)]
-pub enum VPSystems {
+#[derive(SystemLabel)]
+pub enum VPLabel {
     InitClients,
 }

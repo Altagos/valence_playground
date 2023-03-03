@@ -19,7 +19,7 @@ use valence::{bevy_app::Plugin, prelude::*, server::Server};
 use self::chunk_worker::{
     chunk_worker, gen_chunk, ChunkWorkerState, TerrainSettings, WorkerMessage, WorkerResponse,
 };
-use crate::{VPSystems, CONFIG, SECTION_COUNT, SPAWN_POS};
+use crate::{VPLabel, CONFIG, SECTION_COUNT, SPAWN_POS};
 
 /// The order in which chunks should be processed by the thread pool. Smaller
 /// values are sent first.
@@ -52,7 +52,7 @@ impl Plugin for WorldGenPlugin {
             .insert_resource(UpdateTerrainSettings(false)) // you need to register your type to display it
             .add_startup_system(setup)
             .add_system(set_terrain_settings)
-            .add_system(remove_unviewed_chunks.after(VPSystems::InitClients))
+            .add_system(remove_unviewed_chunks.after(VPLabel::InitClients))
             .add_system(update_client_views.after(remove_unviewed_chunks))
             .add_system(send_recv_chunks.after(update_client_views));
     }
