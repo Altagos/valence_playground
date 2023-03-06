@@ -15,6 +15,10 @@ echo "Build and started"
 command = "cargo"
 args = ["r", "-r"]
 
+[tasks.check]
+command = "cargo"
+args = ["check"]
+
 [tasks.no_gui]
 command = "cargo"
 args = ["run", "-r", "--no-default-features", "--features", "minecraft"]

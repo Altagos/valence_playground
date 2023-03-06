@@ -1,10 +1,11 @@
-use bevy::prelude::{Plugin, Query};
-#[allow(unused_imports)]
-use bevy_inspector_egui::{bevy_egui, egui};
+use bevy::{
+    prelude::{Plugin, Query},
+    window::Window,
+};
 use valence::{
     client::event::{ChatMessage, CommandExecution},
     prelude::*,
-    server::EventLoop,
+    server::EventLoopSchedule,
 };
 
 #[allow(dead_code)]
@@ -25,8 +26,8 @@ pub struct ChatPlugin;
 impl Plugin for ChatPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         app.insert_resource(ChatMessages::default())
-            .add_system_to_stage(EventLoop, chat_message)
-            .add_system_to_stage(EventLoop, interpret_command);
+            .add_system(chat_message.in_schedule(EventLoopSchedule))
+            .add_system(interpret_command.in_schedule(EventLoopSchedule));
     }
 }
 
@@ -43,16 +44,13 @@ fn chat_message(
 
         let message = event.message.to_string();
 
-        let username = match sender.player().get_custom_name() {
-            Some(name) => name.clone(),
-            None => Text::from(sender.username().to_string()),
-        };
+        let username = Text::from(sender.username().to_string());
 
         info!(target: "minecraft::chat", "{username}: {}", message);
 
         let formatted = username + ": ".into_text() + message.color(Color::WHITE);
 
-        clients.par_for_each_mut(16, |mut client| {
+        clients.par_iter_mut().for_each_mut(|mut client| {
             client.send_message(formatted.clone());
         });
 
@@ -88,18 +86,6 @@ fn interpret_command(mut clients: Query<&mut Client>, mut events: EventReader<Co
                 }
             };
 
-            if mode == GameMode::Spectator {
-                let player = client.player_mut();
-                player.set_invisible(true);
-                player.set_no_gravity(true);
-                player.set_silent(true);
-            } else {
-                let player = client.player_mut();
-                player.set_invisible(false);
-                player.set_no_gravity(false);
-                player.set_silent(false);
-            }
-
             client.set_game_mode(mode);
             client.send_message(format!("Set gamemode to {mode:?}.").italic());
         } else {
@@ -115,17 +101,18 @@ pub fn gui_chat_window(
     mut clients: Query<(&mut Client, Option<&mut McEntity>)>,
     mut send_message_content: Local<String>,
     mut display_messages: Local<Vec<(String, String)>>,
+    mut windows: Query<(Entity, &mut Window)>,
 ) {
-    let egui_context = egui_context.ctx_mut().clone();
+    use bevy_egui::egui;
+
+    let window = windows.single_mut();
+    let egui_context = egui_context.ctx_for_window_mut(window.0);
 
     messages.0.iter().for_each(|m| match m {
         Message::ChatMessage(m) => {
             let Ok(sender) = clients.get_component::<Client>(m.client) else {return;};
 
-            let username = match sender.player().get_custom_name() {
-                Some(name) => name.to_string(),
-                None => sender.username().to_string(),
-            };
+            let username = sender.username().to_string();
             display_messages.push((username, m.message.to_string()));
         }
         Message::ServerMessage(msg) => {
@@ -151,7 +138,7 @@ pub fn gui_chat_window(
 
                 let button = row.button("Send");
 
-                if row.input().key_pressed(egui::Key::Enter) || button.clicked() {
+                if row.input(|i| i.key_pressed(egui::Key::Enter)) || button.clicked() {
                     let text = send_message_content.clone();
 
                     for (mut c, _) in clients.iter_mut() {

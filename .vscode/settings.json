@@ -1,5 +1,5 @@
 {
     "rust-analyzer.cargo.extraEnv": {
-        "RUSTFLAGS": "--cfg tokio_unstable"
+        "RUSTFLAGS": "--cfg tokio_unstable",
     }
 }

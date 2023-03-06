@@ -30,8 +30,3 @@ lazy_static! {
     pub static ref SPAWN_POS: Mutex<DVec3> = Mutex::new(DVec3::new(0.0, 200.0, 0.0));
     pub static ref CONFIG: Config = Config::from_current_dir().unwrap();
 }
-
-#[derive(SystemLabel)]
-pub enum VPLabel {
-    InitClients,
-}

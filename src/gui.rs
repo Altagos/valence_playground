@@ -13,7 +13,7 @@ impl Plugin for GuiPlugin {
 
             if CONFIG.gui {
                 use bevy::{log::LogPlugin, window::PresentMode};
-                use bevy_inspector_egui::bevy_egui::EguiPlugin;
+                use bevy_egui::EguiPlugin;
 
                 use self::inspector::InspectorPlugin;
                 use crate::minecraft::chat::gui_chat_window;
@@ -21,13 +21,11 @@ impl Plugin for GuiPlugin {
                 app.add_plugins(
                     DefaultPlugins
                         .set(WindowPlugin {
-                            window: WindowDescriptor {
+                            primary_window: Some(Window {
                                 title: "Valence Playground".to_string(),
-                                width: 600.,
-                                height: 600.,
                                 present_mode: PresentMode::AutoVsync,
                                 ..Default::default()
-                            },
+                            }),
                             ..Default::default()
                         })
                         .disable::<LogPlugin>(),

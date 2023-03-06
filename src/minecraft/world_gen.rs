@@ -8,8 +8,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use bevy::prelude::{Query, ResMut, Resource, World};
-use bevy_inspector_egui::{bevy_egui, egui};
+use bevy::{
+    prelude::{Query, ResMut, Resource, World},
+    window::Window,
+};
+use bevy_egui::egui;
 use flume::{Receiver, Sender};
 use indicatif::{ProgressBar, ProgressIterator, ProgressStyle};
 use itertools::iproduct;
@@ -21,7 +24,8 @@ use valence::{bevy_app::Plugin, prelude::*, server::Server};
 use self::chunk_worker::{
     chunk_worker, gen_chunk, ChunkWorkerState, TerrainSettings, WorkerMessage, WorkerResponse,
 };
-use crate::{minecraft::world_gen::chunk_worker::ChunkWorker, VPLabel, CONFIG, SPAWN_POS};
+use super::client::init_clients;
+use crate::{minecraft::world_gen::chunk_worker::ChunkWorker, CONFIG, SPAWN_POS};
 
 /// The order in which chunks should be processed by the thread pool. Smaller
 /// values are sent first.
@@ -34,7 +38,13 @@ type WGSender = Sender<WorkerMessage>;
 type WGReceiver = Receiver<WorkerResponse>;
 
 #[derive(Resource, Clone, Debug)]
-struct UpdateTerrainSettings(bool);
+pub struct UpdateTerrainSettings(bool);
+
+#[derive(Resource, Clone, Debug)]
+pub struct Instances {
+    pub terrain: Entity,
+    pub wait: Entity,
+}
 
 #[derive(Resource)]
 pub struct WorldGenState {
@@ -54,7 +64,7 @@ impl Plugin for WorldGenPlugin {
             .insert_resource(UpdateTerrainSettings(false)) // you need to register your type to display it
             .add_startup_system(setup)
             .add_system(set_terrain_settings)
-            .add_system(remove_unviewed_chunks.after(VPLabel::InitClients))
+            .add_system(remove_unviewed_chunks.after(init_clients))
             .add_system(update_client_views.after(remove_unviewed_chunks))
             .add_system(send_recv_chunks.after(update_client_views));
     }
@@ -197,27 +207,47 @@ fn setup(world: &mut World) {
         .resource::<Server>()
         .new_instance(DimensionId::default());
 
-    let id = world.spawn(instance).id();
+    let terrain_id = world.spawn(instance).id();
 
-    let mut boat = McEntity::new(EntityKind::Boat, id);
-    boat.set_position([0., 200., 0.]);
-    world.spawn(boat);
+    // Creating waiting world
+    let mut instance = world
+        .resource::<Server>()
+        .new_instance(DimensionId::default());
+
+    for z in -5..5 {
+        for x in -5..5 {
+            instance.insert_chunk([x, z], Chunk::default());
+        }
+    }
+
+    for z in -25..25 {
+        for x in -25..25 {
+            instance.set_block([x, 200, z], BlockState::STONE);
+        }
+    }
+
+    let wait_id = world.spawn(instance).id();
+
+    world.insert_resource(Instances {
+        terrain: terrain_id,
+        wait: wait_id,
+    });
 
     info!(target: "minecraft::world_gen", "World generation started");
 }
 
-fn remove_unviewed_chunks(mut instances: Query<&mut Instance>) {
-    instances
-        .single_mut()
-        .retain_chunks(|_, chunk| chunk.is_viewed_mut());
+fn remove_unviewed_chunks(mut instances: Query<&mut Instance>, instances_list: Res<Instances>) {
+    let mut instance = instances.get_mut(instances_list.terrain).unwrap();
+    instance.retain_chunks(|_, chunk| chunk.is_viewed_mut());
 }
 
 fn update_client_views(
-    mut instances: Query<&mut Instance>,
+    instances: Query<&mut Instance>,
+    instances_list: Res<Instances>,
     mut clients: Query<&mut Client>,
     mut state: ResMut<WorldGenState>,
 ) {
-    let instance = instances.single_mut();
+    let instance = instances.get(instances_list.terrain).unwrap();
 
     for client in &mut clients {
         let view = client.view();
@@ -250,8 +280,13 @@ fn update_client_views(
     }
 }
 
-fn send_recv_chunks(mut instances: Query<&mut Instance>, state: ResMut<WorldGenState>) {
-    let mut instance = instances.single_mut();
+fn send_recv_chunks(
+    mut instances: Query<&mut Instance>,
+    instances_list: Res<Instances>,
+    state: ResMut<WorldGenState>,
+    mut clients: Query<&mut Client>,
+) {
+    let mut instance = instances.get_mut(instances_list.terrain).unwrap();
     let state = state.into_inner();
 
     // Insert the chunks that are finished generating into the instance.
@@ -262,6 +297,12 @@ fn send_recv_chunks(mut instances: Query<&mut Instance>, state: ResMut<WorldGenS
                 assert!(state.pending.remove(&pos).is_some());
             }
             WorkerResponse::GetTerrainSettings(_) => todo!("Not yet implemented"),
+            WorkerResponse::TerrainSettingsSet => {
+                clients.par_iter_mut().for_each_mut(|mut c| {
+                    c.set_instance(instances_list.terrain);
+                    c.send_message("Terrain Regenerated".color(Color::GREEN))
+                });
+            }
         }
     }
 
@@ -288,6 +329,7 @@ fn set_terrain_settings(
     mut update: ResMut<UpdateTerrainSettings>,
     mut state: ResMut<WorldGenState>,
     mut instances: Query<&mut Instance>,
+    instances_list: Res<Instances>,
     mut clients: Query<&mut Client>,
 ) {
     if update.0 {
@@ -295,12 +337,14 @@ fn set_terrain_settings(
         let _ = state
             .sender
             .try_send(WorkerMessage::SetTerrainSettings(settings.clone()));
-        let mut instance = instances.single_mut();
+        let mut instance = instances.get_mut(instances_list.terrain).unwrap();
 
         instance.clear_chunks();
 
         for mut client in &mut clients {
             client.send_message("Regenerating terrain".color(Color::RED));
+            client.set_instance(instances_list.wait);
+            client.set_position([0., 203., 0.]);
 
             let view = client.view();
             let queue_pos = |pos| {
@@ -344,32 +388,100 @@ fn set_terrain_settings(
     }
 }
 
-pub fn inspector_ui(world: &mut World) {
-    // the usual `ResourceInspector` code
-    let egui_context = world
-        .resource_mut::<bevy_egui::EguiContext>()
-        .ctx_mut()
-        .clone();
+pub fn inspector_ui(
+    mut egui_context: ResMut<bevy_egui::EguiContext>,
+    mut settings: ResMut<TerrainSettings>,
+    mut update: ResMut<UpdateTerrainSettings>,
+    mut windows: Query<(Entity, &mut Window)>,
+) {
+    let window = windows.single_mut();
+    let ctx = egui_context.ctx_for_window_mut(window.0);
 
-    egui::Window::new("Terrain Settings").show(&egui_context, |ui| {
+    egui::Window::new("Terrain Settings").show(&ctx, |ui| {
         egui::ScrollArea::vertical().show(ui, |ui| {
-            bevy_inspector_egui::bevy_inspector::ui_for_resource::<TerrainSettings>(world, ui);
+            ui.collapsing("Gravel", |ui| {
+                egui::Grid::new("gravel_settings").show(ui, |ui| {
+                    ui.checkbox(&mut settings.enable_gravel, "Enable gravel");
+                    ui.end_row();
+
+                    ui.label("Point scaling");
+                    ui.add(
+                        egui::DragValue::new(&mut settings.gravel_height.point_scaleing).speed(0.1),
+                    );
+                    ui.end_row();
+
+                    ui.label("Octaves");
+                    ui.add(egui::DragValue::new(&mut settings.gravel_height.octaves).speed(0.1));
+                    ui.end_row();
+
+                    ui.label("Lacunarity");
+                    ui.add(egui::DragValue::new(&mut settings.gravel_height.lacunarity).speed(0.1));
+                    ui.end_row();
+
+                    ui.label("Persistence");
+                    ui.add(
+                        egui::DragValue::new(&mut settings.gravel_height.persistence).speed(0.1),
+                    );
+                    ui.end_row();
+                });
+            });
+
+            ui.collapsing("Sand", |ui| {
+                egui::Grid::new("sand_settings").show(ui, |ui| {
+                    ui.checkbox(&mut settings.enable_sand, "Enable sand");
+                    ui.end_row();
+
+                    ui.label("Sand offset");
+                    ui.add(egui::DragValue::new(&mut settings.sand_offset).speed(0.1));
+                    ui.end_row();
+
+                    ui.label("Point scaling");
+                    ui.add(
+                        egui::DragValue::new(&mut settings.sand_height.point_scaleing).speed(0.1),
+                    );
+                    ui.end_row();
+
+                    ui.label("Octaves");
+                    ui.add(egui::DragValue::new(&mut settings.sand_height.octaves).speed(0.1));
+                    ui.end_row();
+
+                    ui.label("Lacunarity");
+                    ui.add(egui::DragValue::new(&mut settings.sand_height.lacunarity).speed(0.1));
+                    ui.end_row();
+
+                    ui.label("Persistence");
+                    ui.add(egui::DragValue::new(&mut settings.sand_height.persistence).speed(0.1));
+                    ui.end_row();
+                });
+            });
+
+            ui.collapsing("Stone", |ui| {
+                egui::Grid::new("stone_settings").show(ui, |ui| {
+                    ui.checkbox(&mut settings.enable_stone, "Enable stone");
+                    ui.end_row();
+
+                    ui.label("Point scaling");
+                    ui.add(egui::DragValue::new(&mut settings.stone_point_scaleing).speed(0.1));
+                    ui.end_row();
+                });
+            });
+
+            ui.checkbox(&mut settings.enable_grass, "Enable grass");
+            ui.checkbox(&mut settings.enable_water, "Enable water");
+            ui.horizontal(|ui| {
+                ui.label("Seed");
+                ui.add(egui::DragValue::new(&mut settings.seed).speed(0.1));
+            });
 
             ui.separator();
 
             ui.horizontal(|ui| {
                 if ui.button("Update").clicked() {
-                    let mut update = world.resource_mut::<UpdateTerrainSettings>();
                     update.0 = true;
                 }
 
                 if ui.button("Reset").clicked() {
-                    {
-                        let mut settings = world.resource_mut::<TerrainSettings>();
-                        *settings = TerrainSettings::default();
-                    }
-
-                    let mut update = world.resource_mut::<UpdateTerrainSettings>();
+                    *settings = TerrainSettings::default();
                     update.0 = true;
                 }
             });

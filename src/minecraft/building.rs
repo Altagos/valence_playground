@@ -5,22 +5,25 @@ use valence::{
     protocol::types::Hand,
 };
 
+use super::world_gen::Instances;
+
 pub struct BuildingPlugin;
 
 impl Plugin for BuildingPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
-        app.add_system_to_stage(EventLoop, digging_creative_mode)
-            .add_system_to_stage(EventLoop, digging_survival_mode)
-            .add_system_to_stage(EventLoop, place_blocks);
+        app.add_system(digging_creative_mode.in_schedule(EventLoopSchedule))
+            .add_system(digging_survival_mode.in_schedule(EventLoopSchedule))
+            .add_system(place_blocks.in_schedule(EventLoopSchedule));
     }
 }
 
 fn digging_creative_mode(
     clients: Query<&Client>,
     mut instances: Query<&mut Instance>,
+    instances_list: Res<Instances>,
     mut events: EventReader<StartDigging>,
 ) {
-    let mut instance = instances.single_mut();
+    let mut instance = instances.get_mut(instances_list.terrain).unwrap();
 
     for event in events.iter() {
         let Ok(client) = clients.get_component::<Client>(event.client) else {
@@ -35,9 +38,10 @@ fn digging_creative_mode(
 fn digging_survival_mode(
     clients: Query<&Client>,
     mut instances: Query<&mut Instance>,
+    instances_list: Res<Instances>,
     mut events: EventReader<StopDestroyBlock>,
 ) {
-    let mut instance = instances.single_mut();
+    let mut instance = instances.get_mut(instances_list.terrain).unwrap();
 
     for event in events.iter() {
         let Ok(client) = clients.get_component::<Client>(event.client) else {
@@ -52,9 +56,10 @@ fn digging_survival_mode(
 fn place_blocks(
     mut clients: Query<(&Client, &mut Inventory)>,
     mut instances: Query<&mut Instance>,
+    instances_list: Res<Instances>,
     mut events: EventReader<PlayerInteractBlock>,
 ) {
-    let mut instance = instances.single_mut();
+    let mut instance = instances.get_mut(instances_list.terrain).unwrap();
 
     for event in events.iter() {
         let Ok((client, mut inventory)) = clients.get_mut(event.client) else {
@@ -86,7 +91,7 @@ fn place_blocks(
             } else {
                 None
             };
-            inventory.replace_slot(slot_id, slot);
+            let _ = inventory.replace_slot(slot_id, slot);
         }
         let real_pos = event.position.get_in_direction(event.direction);
         instance.set_block(real_pos, block_kind.to_state());

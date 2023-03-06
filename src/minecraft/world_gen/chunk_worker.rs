@@ -1,11 +1,10 @@
 use std::{
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Arc, LockResult, Mutex, MutexGuard},
     time::Instant,
 };
 
 use anyhow::Result;
 use bevy::prelude::{Reflect, Resource};
-use bevy_inspector_egui::{prelude::ReflectInspectorOptions, InspectorOptions};
 use flume::{Receiver, Sender};
 use itertools::iproduct;
 use lru::LruCache;
@@ -20,6 +19,7 @@ type CWSender = Sender<WorkerResponse>;
 /// Chunk Worker receiver
 type CWReceiver = Receiver<WorkerMessage>;
 
+#[derive(Debug, Clone)]
 pub enum WorkerMessage {
     Chunk(ChunkPos),
     EmptyCache,
@@ -27,42 +27,51 @@ pub enum WorkerMessage {
     SetTerrainSettings(TerrainSettings),
 }
 
+#[derive(Debug, Clone)]
 pub enum WorkerResponse {
     Chunk(ChunkPos, Chunk),
     GetTerrainSettings(TerrainSettings),
+    TerrainSettingsSet,
 }
 
-#[derive(Debug, Clone, Resource, Reflect, InspectorOptions)]
-#[reflect(Resource, InspectorOptions)]
+#[derive(Debug, Clone, Resource, Reflect)]
+#[reflect(Resource)]
 pub struct TerrainSettings {
+    pub enable_gravel: bool,
     pub gravel_height: FBMSettings,
+    pub enable_sand: bool,
     pub sand_offset: i32,
     pub sand_height: FBMSettings,
+    pub enable_stone: bool,
     pub stone_point_scaleing: f64,
+    pub enable_grass: bool,
+    pub enable_water: bool,
     pub seed: u32,
 }
 
 impl Default for TerrainSettings {
     fn default() -> Self {
         Self {
+            enable_gravel: true,
             gravel_height: FBMSettings::default_gravel(),
+            enable_sand: true,
             sand_offset: 5,
             sand_height: FBMSettings::default_sand(),
+            enable_stone: true,
             stone_point_scaleing: 15.0,
+            enable_grass: true,
+            enable_water: true,
             seed: CONFIG.world.seed.into(),
         }
     }
 }
 
-#[derive(Debug, Default, Clone, Resource, Reflect, InspectorOptions)]
-#[reflect(Resource, InspectorOptions)]
+#[derive(Debug, Default, Clone, Resource, Reflect)]
+#[reflect(Resource)]
 pub struct FBMSettings {
-    #[inspector(min = 0.0)]
     pub point_scaleing: f64,
     pub octaves: u32,
-    #[inspector(min = 0.0)]
     pub lacunarity: f64,
-    #[inspector(min = 0.0)]
     pub persistence: f64,
 }
 
@@ -115,10 +124,28 @@ pub struct ChunkWorkerState {
     pub grass: SuperSimplex,
 }
 
+/// Extension methods for [`LockResult`].
+///
+/// [`LockResult`]: https://doc.rust-lang.org/stable/std/sync/type.LockResult.html
+pub trait LockResultExt {
+    type Guard;
+
+    /// Returns the lock guard even if the mutex is [poisoned].
+    ///
+    /// [poisoned]: https://doc.rust-lang.org/stable/std/sync/struct.Mutex.html#poisoning
+    fn ignore_poison(self) -> Self::Guard;
+}
+
+impl<Guard> LockResultExt for LockResult<Guard> {
+    type Guard = Guard;
+
+    fn ignore_poison(self) -> Guard { self.unwrap_or_else(|e| e.into_inner()) }
+}
+
 /// # Panics
 /// - if state is not accesible
 pub fn chunk_worker(worker: Arc<Mutex<ChunkWorker>>, worker_name: String) -> Result<()> {
-    let mut w = worker.lock().unwrap();
+    let mut w = worker.lock().ignore_poison();
 
     while let Ok(msg) = w.receiver.recv() {
         match msg {
@@ -146,6 +173,8 @@ pub fn chunk_worker(worker: Arc<Mutex<ChunkWorker>>, worker_name: String) -> Res
                 w.state.settings = new_settings;
                 w.cache.clear();
                 debug!(target: "minecraft::world_gen::worker", "Cache emptied");
+
+                let _ = w.sender.send(WorkerResponse::TerrainSettingsSet);
             }
             WorkerMessage::EmptyCache => {
                 w.cache.clear();
@@ -249,13 +278,17 @@ pub fn gen_block(
             if in_terrain {
                 if depth > 0 {
                     depth -= 1;
-                    if y < gravel_height {
+                    if y < gravel_height && state.settings.enable_gravel {
                         BlockState::GRAVEL
-                    } else {
+                    } else if state.settings.enable_grass {
                         BlockState::DIRT
+                    } else {
+                        BlockState::AIR
                     }
-                } else {
+                } else if state.settings.enable_stone {
                     BlockState::STONE
+                } else {
+                    BlockState::AIR
                 }
             } else {
                 in_terrain = true;
@@ -263,18 +296,20 @@ pub fn gen_block(
 
                 depth = (n * 5.0).round() as u64;
 
-                if y < gravel_height {
+                if y < gravel_height && state.settings.enable_gravel {
                     BlockState::GRAVEL
-                } else if y < sand_height {
+                } else if y >= gravel_height && y < sand_height && state.settings.enable_sand {
                     BlockState::SAND
-                } else {
+                } else if state.settings.enable_grass {
                     BlockState::GRASS_BLOCK
+                } else {
+                    BlockState::AIR
                 }
             }
         } else {
             in_terrain = false;
             depth = 0;
-            if y < WATER_HEIGHT {
+            if y < WATER_HEIGHT && state.settings.enable_water {
                 BlockState::WATER
             } else {
                 BlockState::AIR
@@ -285,39 +320,44 @@ pub fn gen_block(
     }
 
     // Add grass on top of grass blocks.
-    for y in (0..chunk.section_count() * 16).rev() {
-        if chunk.block_state(offset_x, y, offset_z).is_air()
-            && chunk.block_state(offset_x, y - 1, offset_z) == BlockState::GRASS_BLOCK
-        {
-            let p = DVec3::new(f64::from(x), y as f64, f64::from(z));
-            let density = fbm(&state.grass, p / 5.0, 4, 2.0, 0.7);
+    if (state.settings.enable_water && state.settings.enable_gravel) || state.settings.enable_grass
+    {
+        for y in (0..chunk.section_count() * 16).rev() {
+            if chunk.block_state(offset_x, y, offset_z).is_air()
+                && chunk.block_state(offset_x, y - 1, offset_z) == BlockState::GRASS_BLOCK
+            {
+                let p = DVec3::new(f64::from(x), y as f64, f64::from(z));
+                let density = fbm(&state.grass, p / 5.0, 4, 2.0, 0.7);
 
-            if density > 0.55 {
-                if density > 0.7 && chunk.block_state(offset_x, y + 1, offset_z).is_air() {
-                    let upper = BlockState::TALL_GRASS.set(PropName::Half, PropValue::Upper);
-                    let lower = BlockState::TALL_GRASS.set(PropName::Half, PropValue::Lower);
+                if density > 0.55 {
+                    if density > 0.7 && chunk.block_state(offset_x, y + 1, offset_z).is_air() {
+                        let upper = BlockState::TALL_GRASS.set(PropName::Half, PropValue::Upper);
+                        let lower = BlockState::TALL_GRASS.set(PropName::Half, PropValue::Lower);
 
-                    chunk.set_block_state(offset_x, y + 1, offset_z, upper);
-                    chunk.set_block_state(offset_x, y, offset_z, lower);
-                } else {
-                    chunk.set_block_state(offset_x, y, offset_z, BlockState::GRASS);
+                        chunk.set_block_state(offset_x, y + 1, offset_z, upper);
+                        chunk.set_block_state(offset_x, y, offset_z, lower);
+                    } else {
+                        chunk.set_block_state(offset_x, y, offset_z, BlockState::GRASS);
+                    }
                 }
-            }
-        } else if chunk.block_state(offset_x, y, offset_z).is_liquid()
-            && chunk.block_state(offset_x, y - 1, offset_z) == BlockState::GRAVEL
-        {
-            let p = DVec3::new(f64::from(x), y as f64, f64::from(z));
-            let density = fbm(&state.grass, p / 5.0, 4, 2.0, 0.7);
+            } else if chunk.block_state(offset_x, y, offset_z).is_liquid()
+                && chunk.block_state(offset_x, y - 1, offset_z) == BlockState::GRAVEL
+                && state.settings.enable_water
+                && state.settings.enable_gravel
+            {
+                let p = DVec3::new(f64::from(x), y as f64, f64::from(z));
+                let density = fbm(&state.grass, p / 5.0, 4, 2.0, 0.7);
 
-            if density > 0.55 {
-                if density > 0.7 && chunk.block_state(offset_x, y + 1, offset_z).is_liquid() {
-                    let upper = BlockState::TALL_SEAGRASS.set(PropName::Half, PropValue::Upper);
-                    let lower = BlockState::TALL_SEAGRASS.set(PropName::Half, PropValue::Lower);
+                if density > 0.55 {
+                    if density > 0.7 && chunk.block_state(offset_x, y + 1, offset_z).is_liquid() {
+                        let upper = BlockState::TALL_SEAGRASS.set(PropName::Half, PropValue::Upper);
+                        let lower = BlockState::TALL_SEAGRASS.set(PropName::Half, PropValue::Lower);
 
-                    chunk.set_block_state(offset_x, y + 1, offset_z, upper);
-                    chunk.set_block_state(offset_x, y, offset_z, lower);
-                } else {
-                    chunk.set_block_state(offset_x, y, offset_z, BlockState::SEAGRASS);
+                        chunk.set_block_state(offset_x, y + 1, offset_z, upper);
+                        chunk.set_block_state(offset_x, y, offset_z, lower);
+                    } else {
+                        chunk.set_block_state(offset_x, y, offset_z, BlockState::SEAGRASS);
+                    }
                 }
             }
         }

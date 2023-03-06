@@ -25,7 +25,7 @@ impl Plugin for MinecraftPlugin {
             .add_plugin(ChatPlugin)
             .add_plugin(ClientPlugin)
             .add_plugin(WorldGenPlugin)
-            .add_system_to_stage(EventLoop, default_event_handler);
+            .add_system(default_event_handler.in_schedule(EventLoopSchedule));
     }
 
     #[cfg(not(feature = "minecraft"))]
