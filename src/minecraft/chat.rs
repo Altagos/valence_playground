@@ -8,6 +8,9 @@ use valence::{
     server::EventLoopSchedule,
 };
 
+use super::world_gen::Instances;
+use crate::SPAWN_POS;
+
 #[allow(dead_code)]
 pub enum Message {
     ChatMessage(ChatMessage),
@@ -58,7 +61,11 @@ fn chat_message(
     }
 }
 
-fn interpret_command(mut clients: Query<&mut Client>, mut events: EventReader<CommandExecution>) {
+fn interpret_command(
+    mut clients: Query<&mut Client>,
+    mut events: EventReader<CommandExecution>,
+    instances_list: Res<Instances>,
+) {
     for event in events.iter() {
         let Ok(mut client) = clients.get_component_mut::<Client>(event.client) else {
             continue;
@@ -88,6 +95,13 @@ fn interpret_command(mut clients: Query<&mut Client>, mut events: EventReader<Co
 
             client.set_game_mode(mode);
             client.send_message(format!("Set gamemode to {mode:?}.").italic());
+        } else if command == "terrain" {
+            client.set_instance(instances_list.terrain);
+            let spawn = *SPAWN_POS.lock().unwrap();
+            client.set_position([spawn.x, spawn.y, spawn.z]);
+        } else if command == "wait" {
+            client.set_instance(instances_list.wait);
+            client.set_position([0., 203., 0.]);
         } else {
             client.send_message("Invalid command.".italic());
         }
@@ -96,17 +110,13 @@ fn interpret_command(mut clients: Query<&mut Client>, mut events: EventReader<Co
 
 #[cfg(feature = "gui")]
 pub fn gui_chat_window(
-    mut egui_context: ResMut<bevy_egui::EguiContext>,
+    mut egui_context: bevy_egui::EguiContexts,
     mut messages: ResMut<ChatMessages>,
     mut clients: Query<(&mut Client, Option<&mut McEntity>)>,
     mut send_message_content: Local<String>,
     mut display_messages: Local<Vec<(String, String)>>,
-    mut windows: Query<(Entity, &mut Window)>,
 ) {
     use bevy_egui::egui;
-
-    let window = windows.single_mut();
-    let egui_context = egui_context.ctx_for_window_mut(window.0);
 
     messages.0.iter().for_each(|m| match m {
         Message::ChatMessage(m) => {
@@ -125,7 +135,7 @@ pub fn gui_chat_window(
     egui::Window::new("Chat")
         .resizable(true)
         .collapsible(true)
-        .show(&egui_context, |ui| {
+        .show(&egui_context.ctx_mut(), |ui| {
             ui.horizontal(|row| {
                 row.label("Total amount of messages:");
                 row.label(format!("{}", messages.0.len()));

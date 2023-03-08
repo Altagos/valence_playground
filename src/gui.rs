@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, window::CompositeAlphaMode};
 
 pub mod inspector;
 
@@ -18,31 +18,31 @@ impl Plugin for GuiPlugin {
                 use self::inspector::InspectorPlugin;
                 use crate::minecraft::chat::gui_chat_window;
 
-                app.add_plugins(
-                    DefaultPlugins
-                        .set(WindowPlugin {
-                            primary_window: Some(Window {
-                                title: "Valence Playground".to_string(),
-                                present_mode: PresentMode::AutoVsync,
+                app.insert_resource(ClearColor(Color::rgba(0.3, 0.3, 0.3, 0.75)))
+                    .add_plugins(
+                        DefaultPlugins
+                            .set(WindowPlugin {
+                                primary_window: Some(Window {
+                                    title: "Valence Playground".to_string(),
+                                    present_mode: PresentMode::AutoVsync,
+                                    transparent: true,
+                                    // decorations: false,
+                                    #[cfg(target_os = "macos")]
+                                    composite_alpha_mode: CompositeAlphaMode::PostMultiplied,
+                                    ..Default::default()
+                                }),
                                 ..Default::default()
-                            }),
-                            ..Default::default()
-                        })
-                        .disable::<LogPlugin>(),
-                )
-                .add_plugin(EguiPlugin)
-                .add_plugin(InspectorPlugin)
-                .add_startup_system(setup_camera)
-                .add_system(gui_chat_window);
+                            })
+                            .disable::<LogPlugin>(),
+                    )
+                    .add_plugin(EguiPlugin)
+                    .add_plugin(InspectorPlugin)
+                    .add_startup_system(setup_camera)
+                    .add_system(gui_chat_window);
             }
         }
     }
 }
 
 #[allow(dead_code)]
-fn setup_camera(mut commands: Commands) {
-    commands.spawn(Camera3dBundle {
-        transform: Transform::from_xyz(-2.0, 2.5, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
-        ..Default::default()
-    });
-}
+fn setup_camera(mut commands: Commands) { commands.spawn(Camera2dBundle::default()); }

@@ -13,7 +13,7 @@ opt-level = 1
 
 [dependencies]
 anyhow = "1"
-bevy_egui = { path = "../bevy_egui" }
+bevy_egui = { git = "https://github.com/mvlabat/bevy_egui" }
 cfg-if = "1"
 chrono = "0.4.23"
 dotenv = "0.15"
@@ -32,15 +32,14 @@ toml = "0.7"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = "0.3"
-valence = { git = "https://github.com/valence-rs/valence", rev = "9f8ff32" }
+valence = { git = "https://github.com/valence-rs/valence", rev = "e933fd6" }
 vek = "0.15"
 
 [dev-dependencies]
 criterion = "0.4"
 
 [dependencies.bevy]
-git = "https://github.com/bevyengine/bevy/"
-rev = "2ea00610188dce1eba1172a3ded8244570189230"
+version = "0.10"
 
 
 [[bench]]

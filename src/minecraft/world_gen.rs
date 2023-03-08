@@ -300,6 +300,8 @@ fn send_recv_chunks(
             WorkerResponse::TerrainSettingsSet => {
                 clients.par_iter_mut().for_each_mut(|mut c| {
                     c.set_instance(instances_list.terrain);
+                    let spawn = *SPAWN_POS.lock().unwrap();
+                    c.set_position([spawn.x, spawn.y, spawn.z]);
                     c.send_message("Terrain Regenerated".color(Color::GREEN))
                 });
             }
@@ -389,15 +391,11 @@ fn set_terrain_settings(
 }
 
 pub fn inspector_ui(
-    mut egui_context: ResMut<bevy_egui::EguiContext>,
+    mut egui_context: bevy_egui::EguiContexts,
     mut settings: ResMut<TerrainSettings>,
     mut update: ResMut<UpdateTerrainSettings>,
-    mut windows: Query<(Entity, &mut Window)>,
 ) {
-    let window = windows.single_mut();
-    let ctx = egui_context.ctx_for_window_mut(window.0);
-
-    egui::Window::new("Terrain Settings").show(&ctx, |ui| {
+    egui::Window::new("Terrain Settings").show(&egui_context.ctx_mut(), |ui| {
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.collapsing("Gravel", |ui| {
                 egui::Grid::new("gravel_settings").show(ui, |ui| {
@@ -471,6 +469,9 @@ pub fn inspector_ui(
             ui.horizontal(|ui| {
                 ui.label("Seed");
                 ui.add(egui::DragValue::new(&mut settings.seed).speed(0.1));
+                if ui.button("Random").clicked() {
+                    settings.seed = rand::random();
+                }
             });
 
             ui.separator();
