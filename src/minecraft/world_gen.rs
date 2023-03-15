@@ -14,6 +14,7 @@ use bevy::{
 };
 use bevy_egui::egui;
 use flume::{Receiver, Sender};
+use futures::prelude::*;
 use indicatif::{ProgressBar, ProgressIterator, ProgressStyle};
 use itertools::iproduct;
 use lru::LruCache;
@@ -25,7 +26,13 @@ use self::chunk_worker::{
     chunk_worker, gen_chunk, ChunkWorkerState, TerrainSettings, WorkerMessage, WorkerResponse,
 };
 use super::client::init_clients;
-use crate::{minecraft::world_gen::chunk_worker::ChunkWorker, CONFIG, SPAWN_POS};
+use crate::{
+    minecraft::{
+        save::{load_chunk, load_regions, save_chunk, save_to_regions, Region},
+        world_gen::chunk_worker::ChunkWorker,
+    },
+    CONFIG, SPAWN_POS,
+};
 
 /// The order in which chunks should be processed by the thread pool. Smaller
 /// values are sent first.
@@ -108,6 +115,13 @@ fn setup(world: &mut World) {
         pending_chunks.insert(pos, Some((x + z) as u64));
     }
 
+    let regions = match load_regions() {
+        Ok(r) => r,
+        Err(_) => vec![],
+    };
+    let regions_empty = regions.is_empty();
+    debug!("{regions_empty}");
+
     let pb = ProgressBar::new(num_pregen_chunks as u64)
         .with_message("Pregenerating chunks...".to_string());
 
@@ -128,10 +142,18 @@ fn setup(world: &mut World) {
         .map(move |(x, z)| {
             let pos = ChunkPos::new(x, z);
 
-            // let state = &state_clone;
-            let chunk = gen_chunk(&state_clone, pos);
-            // state.cache.push(pos, chunk.clone());
-            // let _ = state.sender.try_send(WorkerResponse::Chunk(pos, chunk));
+            let chunk = if regions_empty {
+                gen_chunk(&state_clone, pos)
+            } else {
+                match Region::chunk_from_regions(&regions, pos) {
+                    Some(c) => {
+                        trace!(target: "minecraft::world_gen", "loaded from file: ({}, {})", pos.x, pos.z);
+                        c.into()
+                    }
+                    None => gen_chunk(&state_clone, pos)
+                }
+            };
+
             (pos, chunk)
         })
         .collect::<Vec<(ChunkPos, Chunk)>>();
@@ -139,6 +161,10 @@ fn setup(world: &mut World) {
     chunks.iter().for_each(|(pos, chunk)| {
         cache.push(pos.to_owned(), chunk.to_owned());
     });
+
+    if regions_empty {
+        save_to_regions(&chunks);
+    }
 
     drop(chunks);
 

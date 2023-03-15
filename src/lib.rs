@@ -13,6 +13,7 @@
 pub mod config;
 pub mod gui;
 pub mod minecraft;
+pub mod util;
 
 #[macro_use]
 extern crate tracing;
@@ -24,6 +25,7 @@ use lazy_static::lazy_static;
 use valence::prelude::*;
 
 pub const SECTION_COUNT: usize = 24;
+pub const REGION_SIZE: usize = 16;
 
 lazy_static! {
     pub static ref PLAYER_COUNT: Mutex<usize> = Mutex::new(0);

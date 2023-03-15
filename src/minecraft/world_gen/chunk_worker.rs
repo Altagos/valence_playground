@@ -6,12 +6,13 @@ use std::{
 use anyhow::Result;
 use bevy::prelude::{Reflect, Resource};
 use flume::{Receiver, Sender};
-use itertools::iproduct;
+use itertools::{iproduct, Itertools};
 use lru::LruCache;
 use noise::{NoiseFn, SuperSimplex};
+use rayon::prelude::*;
 use valence::{prelude::*, view::ChunkPos};
 
-use crate::{CONFIG, SECTION_COUNT};
+use crate::{util::*, CONFIG, SECTION_COUNT};
 
 /// Chunk Worker sender
 type CWSender = Sender<WorkerResponse>;
@@ -124,24 +125,6 @@ pub struct ChunkWorkerState {
     pub grass: SuperSimplex,
 }
 
-/// Extension methods for [`LockResult`].
-///
-/// [`LockResult`]: https://doc.rust-lang.org/stable/std/sync/type.LockResult.html
-pub trait LockResultExt {
-    type Guard;
-
-    /// Returns the lock guard even if the mutex is [poisoned].
-    ///
-    /// [poisoned]: https://doc.rust-lang.org/stable/std/sync/struct.Mutex.html#poisoning
-    fn ignore_poison(self) -> Self::Guard;
-}
-
-impl<Guard> LockResultExt for LockResult<Guard> {
-    type Guard = Guard;
-
-    fn ignore_poison(self) -> Guard { self.unwrap_or_else(|e| e.into_inner()) }
-}
-
 /// # Panics
 /// - if state is not accesible
 pub fn chunk_worker(worker: Arc<Mutex<ChunkWorker>>, worker_name: String) -> Result<()> {
@@ -224,7 +207,10 @@ fn handle_chunk(
 pub fn gen_chunk(state: &ChunkWorkerState, pos: ChunkPos) -> Chunk {
     let mut chunk = Chunk::new(SECTION_COUNT);
 
-    for (offset_z, offset_x) in iproduct!(0..16, 0..16) {
+    let range = 0..16;
+    let range_2 = 0..16;
+
+    for (offset_z, offset_x) in range.cartesian_product(range_2) {
         let x = offset_x as i32 + pos.x * 16;
         let z = offset_z as i32 + pos.z * 16;
 
