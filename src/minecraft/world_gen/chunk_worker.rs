@@ -12,7 +12,13 @@ use noise::{NoiseFn, SuperSimplex};
 use rayon::prelude::*;
 use valence::{prelude::*, view::ChunkPos};
 
-use crate::{util::*, CONFIG, SECTION_COUNT};
+use crate::{
+    minecraft::save::{
+        chunkpos_to_regionpos, load_region, overwrite_regions, save_chunk_to_region,
+    },
+    util::*,
+    CONFIG, SECTION_COUNT,
+};
 
 /// Chunk Worker sender
 type CWSender = Sender<WorkerResponse>;
@@ -176,13 +182,42 @@ fn handle_chunk(
 ) -> Result<()> {
     let chunk;
     let cached;
+    let saved;
     let start = Instant::now();
 
     if worker.cache.contains(&pos) {
         chunk = worker.cache.get_mut(&pos).unwrap().clone();
         cached = true;
+        saved = true;
     } else {
-        chunk = gen_chunk(&worker.state, pos);
+        chunk = {
+            if let Ok(region) = load_region(chunkpos_to_regionpos(&pos)) {
+                match region.chunk(pos) {
+                    Some(c) => {
+                        saved = true;
+                        c.into()
+                    }
+                    None => {
+                        saved = false;
+                        let chunk = gen_chunk(&worker.state, pos);
+                        let chunk_clone = chunk.clone();
+                        let pos_clone = pos.clone();
+                        tokio::task::Builder::new().spawn_blocking(move || {
+                            save_chunk_to_region(chunk_clone, pos_clone).unwrap()
+                        });
+                        chunk
+                    }
+                }
+            } else {
+                saved = false;
+                let chunk = gen_chunk(&worker.state, pos);
+                let chunk_clone = chunk.clone();
+                let pos_clone = pos.clone();
+                tokio::task::Builder::new()
+                    .spawn_blocking(move || save_chunk_to_region(chunk_clone, pos_clone).unwrap());
+                chunk
+            }
+        };
 
         // chunk = gen_chunk(&worker.state, pos);
         worker.cache.push(pos, chunk.clone());
@@ -196,6 +231,7 @@ fn handle_chunk(
     trace!(
         target: "minecraft::world_gen::worker",
         cached = cached,
+        saved = saved,
         worker = worker_name,
         "Generated chunk at: {pos:?} ({duration:?}) settings = {settings:?}"
     );

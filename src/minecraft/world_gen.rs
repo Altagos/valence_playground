@@ -28,7 +28,7 @@ use self::chunk_worker::{
 use super::client::init_clients;
 use crate::{
     minecraft::{
-        save::{load_chunk, load_regions, save_chunk, save_to_regions, Region},
+        save::{load_chunk, load_regions, overwrite_regions, save_chunk, Region},
         world_gen::chunk_worker::ChunkWorker,
     },
     CONFIG, SPAWN_POS,
@@ -163,7 +163,7 @@ fn setup(world: &mut World) {
     });
 
     if regions_empty {
-        save_to_regions(&chunks);
+        overwrite_regions(&chunks);
     }
 
     drop(chunks);

@@ -25,7 +25,7 @@ use lazy_static::lazy_static;
 use valence::prelude::*;
 
 pub const SECTION_COUNT: usize = 24;
-pub const REGION_SIZE: usize = 16;
+pub const REGION_SIZE: f64 = 16.0;
 
 lazy_static! {
     pub static ref PLAYER_COUNT: Mutex<usize> = Mutex::new(0);

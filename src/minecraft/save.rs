@@ -17,7 +17,7 @@ use valence::{
 };
 use walkdir::WalkDir;
 
-use crate::SECTION_COUNT;
+use crate::{REGION_SIZE, SECTION_COUNT};
 
 #[derive(PartialEq, Debug, serde::Deserialize, serde::Serialize)]
 pub struct Region {
@@ -35,8 +35,7 @@ impl Region {
     }
 
     pub fn chunk_from_regions(regions: &Vec<Region>, pos: ChunkPos) -> Option<&SaveChunk> {
-        let rpos_x = (pos.x as f64 / 16.0).floor() as i64;
-        let rpos_z = (pos.z as f64 / 16.0).floor() as i64;
+        let (rpos_x, rpos_z) = chunkpos_to_regionpos(&pos);
 
         match Region::region(regions, (rpos_x, rpos_z)) {
             Some(r) => r.chunk(pos),
@@ -59,12 +58,18 @@ pub struct Block {
     kind: u16,
 }
 
-pub fn save_to_regions(chunks: &Vec<(ChunkPos, Chunk)>) -> Result<()> {
+pub fn chunkpos_to_regionpos(pos: &ChunkPos) -> (i64, i64) {
+    let rpos_x = (pos.x as f64 / REGION_SIZE).floor() as i64;
+    let rpos_z = (pos.z as f64 / REGION_SIZE).floor() as i64;
+
+    (rpos_x, rpos_z)
+}
+
+pub fn overwrite_regions(chunks: &Vec<(ChunkPos, Chunk)>) -> Result<()> {
     let mut regions = HashMap::new();
 
     for (pos, chunk) in chunks {
-        let rpos_x = (pos.x as f64 / 16.0).floor() as i64;
-        let rpos_z = (pos.z as f64 / 16.0).floor() as i64;
+        let (rpos_x, rpos_z) = chunkpos_to_regionpos(pos);
 
         let mut region = match regions.get_mut(&(rpos_x, rpos_z)) {
             Some(r) => r,
@@ -101,6 +106,62 @@ pub fn save_to_regions(chunks: &Vec<(ChunkPos, Chunk)>) -> Result<()> {
     }
 
     Result::Ok(())
+}
+
+pub fn save_chunk_to_region(chunk: Chunk, pos: ChunkPos) -> Result<()> {
+    let rpos = chunkpos_to_regionpos(&pos);
+    let mut region = match load_region(rpos) {
+        Ok(r) => r,
+        Err(_) => Region {
+            pos: rpos,
+            chunks: vec![],
+        },
+    };
+
+    let mut save_chunk: SaveChunk = chunk.into();
+    save_chunk.pos = (pos.x, pos.z);
+
+    region.chunks.iter().map(|c| {
+        if c.pos == save_chunk.pos {
+            &save_chunk
+        } else {
+            c
+        }
+    });
+
+    let base_path = std::env::current_dir()?.join("world");
+
+    let path = base_path.join(format!("{}_{}.region", rpos.0, rpos.1));
+
+    let mut file = StdOpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(path)?;
+    let encoded: Vec<u8> = bincode::serialize(&region)?;
+    file.write_all(encoded.as_slice())?;
+
+    trace!(
+        "saved chunk ({}, {}) to region {} {}",
+        pos.x,
+        pos.z,
+        rpos.0,
+        rpos.1
+    );
+
+    Result::Ok(())
+}
+
+pub fn load_region(pos: (i64, i64)) -> Result<Region> {
+    let base_path = std::env::current_dir()?.join("world");
+    let path = base_path.join(format!("{}_{}.region", pos.0, pos.1));
+
+    let mut buf = vec![];
+    let mut file = StdOpenOptions::new().read(true).open(path)?;
+    file.read_to_end(&mut buf);
+
+    let region: Region = bincode::deserialize(&buf)?;
+    Result::Ok(region)
 }
 
 pub fn load_regions() -> Result<Vec<Region>> {
