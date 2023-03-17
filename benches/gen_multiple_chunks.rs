@@ -26,7 +26,7 @@ pub fn gen_multiple_chunks(c: &mut Criterion) {
             let state = create_state(1);
             b.iter(|| {
                 for j in 0..*i {
-                    gen_chunk(black_box(&state), black_box(ChunkPos::new(j, j)));
+                    let _ = gen_chunk(black_box(&state), black_box(ChunkPos::new(j, j)));
                 }
             })
         });
@@ -34,7 +34,7 @@ pub fn gen_multiple_chunks(c: &mut Criterion) {
             let state = create_state(1);
             b.iter(|| {
                 for j in 0..*i {
-                    gen_chunk_fors(black_box(&state), black_box(ChunkPos::new(j, j)));
+                    let _ = gen_chunk_fors(black_box(&state), black_box(ChunkPos::new(j, j)));
                 }
             })
         });

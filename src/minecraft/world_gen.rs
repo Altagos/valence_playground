@@ -8,12 +8,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use bevy::{
-    prelude::{Query, ResMut, Resource, World},
-};
+use bevy::prelude::{Query, ResMut, Resource, World};
 use bevy_egui::egui;
 use flume::{Receiver, Sender};
-use futures::prelude::*;
 use indicatif::{ProgressBar, ProgressIterator, ProgressStyle};
 use itertools::iproduct;
 use lru::LruCache;
@@ -162,7 +159,7 @@ fn setup(world: &mut World) {
     }
 
     if regions_empty {
-        overwrite_regions(&chunks, state.settings.clone());
+        let _ = overwrite_regions(&chunks, state.settings.clone());
     }
 
     drop(chunks);

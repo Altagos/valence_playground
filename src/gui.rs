@@ -1,4 +1,4 @@
-use bevy::{prelude::*, window::CompositeAlphaMode};
+use bevy::prelude::*;
 
 pub mod inspector;
 
@@ -12,7 +12,10 @@ impl Plugin for GuiPlugin {
             use crate::CONFIG;
 
             if CONFIG.gui {
-                use bevy::{log::LogPlugin, window::PresentMode};
+                use bevy::{
+                    log::LogPlugin,
+                    window::{CompositeAlphaMode, PresentMode},
+                };
                 use bevy_egui::EguiPlugin;
 
                 use self::inspector::InspectorPlugin;
