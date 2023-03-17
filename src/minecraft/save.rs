@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    fs::{FileType, OpenOptions as StdOpenOptions},
+    fs::{OpenOptions as StdOpenOptions},
     io::{Read, Write},
 };
 
@@ -28,15 +28,15 @@ pub struct Region {
 }
 
 impl Region {
-    pub fn chunk(&self, pos: ChunkPos) -> Option<&SaveChunk> {
+    #[must_use] pub fn chunk(&self, pos: ChunkPos) -> Option<&SaveChunk> {
         self.chunks.iter().find(|&c| c.pos == (pos.x, pos.z))
     }
 
-    pub fn region(regions: &Vec<Region>, pos: (i64, i64)) -> Option<&Region> {
+    #[must_use] pub fn region(regions: &Vec<Region>, pos: (i64, i64)) -> Option<&Region> {
         regions.iter().find(|&r| r.pos == pos)
     }
 
-    pub fn chunk_from_regions(regions: &Vec<Region>, pos: ChunkPos) -> Option<&SaveChunk> {
+    #[must_use] pub fn chunk_from_regions(regions: &Vec<Region>, pos: ChunkPos) -> Option<&SaveChunk> {
         let (rpos_x, rpos_z) = chunkpos_to_regionpos(&pos);
 
         match Region::region(regions, (rpos_x, rpos_z)) {
@@ -60,9 +60,9 @@ pub struct Block {
     kind: u16,
 }
 
-pub fn chunkpos_to_regionpos(pos: &ChunkPos) -> (i64, i64) {
-    let rpos_x = (pos.x as f64 / REGION_SIZE).floor() as i64;
-    let rpos_z = (pos.z as f64 / REGION_SIZE).floor() as i64;
+#[must_use] pub fn chunkpos_to_regionpos(pos: &ChunkPos) -> (i64, i64) {
+    let rpos_x = (f64::from(pos.x) / REGION_SIZE).floor() as i64;
+    let rpos_z = (f64::from(pos.z) / REGION_SIZE).floor() as i64;
 
     (rpos_x, rpos_z)
 }
@@ -73,7 +73,7 @@ pub fn overwrite_regions(chunks: &Vec<(ChunkPos, Chunk)>, settings: TerrainSetti
     for (pos, chunk) in chunks {
         let (rpos_x, rpos_z) = chunkpos_to_regionpos(pos);
 
-        let mut region = match regions.get_mut(&(rpos_x, rpos_z)) {
+        let region = match regions.get_mut(&(rpos_x, rpos_z)) {
             Some(r) => r,
             None => {
                 let region = Region {
@@ -113,7 +113,7 @@ pub fn overwrite_regions(chunks: &Vec<(ChunkPos, Chunk)>, settings: TerrainSetti
 
 pub fn save_chunk_to_region(chunk: Chunk, pos: ChunkPos, settings: TerrainSettings) -> Result<()> {
     let rpos = chunkpos_to_regionpos(&pos);
-    let mut region = match load_region(rpos, &settings) {
+    let region = match load_region(rpos, &settings) {
         Ok(r) => r,
         Err(_) => Region {
             pos: rpos,
@@ -178,19 +178,17 @@ pub fn load_regions() -> Result<Vec<Region>> {
     let base_path = std::env::current_dir()?.join("world");
     for entry in WalkDir::new(base_path) {
         let entry = entry?;
-        let file = entry.path().display();
+        let _file = entry.path().display();
 
-        if entry.file_type().is_file() {
-            if entry.path().extension().unwrap() == "region" {
-                let mut buf = vec![];
-                let mut file = StdOpenOptions::new().read(true).open(entry.path())?;
-                file.read_to_end(&mut buf);
+        if entry.file_type().is_file() && entry.path().extension().unwrap() == "region" {
+            let mut buf = vec![];
+            let mut file = StdOpenOptions::new().read(true).open(entry.path())?;
+            file.read_to_end(&mut buf);
 
-                let region: Region = bincode::deserialize(&buf)?;
-                trace!(target: "minecraft::save", "loaded region {:?}", region.pos);
+            let region: Region = bincode::deserialize(&buf)?;
+            trace!(target: "minecraft::save", "loaded region {:?}", region.pos);
 
-                regions.push(region);
-            }
+            regions.push(region);
         }
     }
 

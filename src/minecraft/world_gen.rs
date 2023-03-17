@@ -10,7 +10,6 @@ use std::{
 
 use bevy::{
     prelude::{Query, ResMut, Resource, World},
-    window::Window,
 };
 use bevy_egui::egui;
 use flume::{Receiver, Sender};
@@ -28,7 +27,7 @@ use self::chunk_worker::{
 use super::client::init_clients;
 use crate::{
     minecraft::{
-        save::{load_chunk, load_regions, overwrite_regions, save_chunk, Region},
+        save::{load_regions, overwrite_regions, Region},
         world_gen::chunk_worker::ChunkWorker,
     },
     CONFIG, SPAWN_POS,
@@ -158,9 +157,9 @@ fn setup(world: &mut World) {
         })
         .collect::<Vec<(ChunkPos, Chunk)>>();
 
-    chunks.iter().for_each(|(pos, chunk)| {
-        cache.push(pos.to_owned(), chunk.to_owned());
-    });
+    for (pos, chunk) in &chunks {
+        cache.push(*pos, chunk.clone());
+    }
 
     if regions_empty {
         overwrite_regions(&chunks, state.settings.clone());
@@ -215,8 +214,8 @@ fn setup(world: &mut World) {
         let worker_clone = Arc::clone(&worker);
 
         let _ = tokio::task::Builder::new()
-            .name(&format!("ChunkWorker_{}", i))
-            .spawn(async move { chunk_worker(worker_clone, format!("ChunkWorker_{}", i)) });
+            .name(&format!("ChunkWorker_{i}"))
+            .spawn(async move { chunk_worker(worker_clone, format!("ChunkWorker_{i}")) });
 
         debug!(target: "minecraft::world_gen", "Started Chunk Worker {}", i);
     }
@@ -421,7 +420,7 @@ pub fn inspector_ui(
     mut settings: ResMut<TerrainSettings>,
     mut update: ResMut<UpdateTerrainSettings>,
 ) {
-    egui::Window::new("Terrain Settings").show(&egui_context.ctx_mut(), |ui| {
+    egui::Window::new("Terrain Settings").show(egui_context.ctx_mut(), |ui| {
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.collapsing("Gravel", |ui| {
                 egui::Grid::new("gravel_settings").show(ui, |ui| {

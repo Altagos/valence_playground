@@ -1,12 +1,12 @@
 use std::{
-    sync::{Arc, LockResult, Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard},
     time::Instant,
 };
 
 use anyhow::Result;
 use bevy::prelude::{Reflect, Resource};
 use flume::{Receiver, Sender};
-use itertools::{iproduct, Itertools};
+use itertools::{Itertools};
 use lru::LruCache;
 use noise::{NoiseFn, SuperSimplex};
 use rayon::prelude::*;
@@ -14,9 +14,9 @@ use valence::{prelude::*, view::ChunkPos};
 
 use crate::{
     minecraft::save::{
-        chunkpos_to_regionpos, load_region, overwrite_regions, save_chunk_to_region,
+        chunkpos_to_regionpos, load_region, save_chunk_to_region,
     },
-    util::*,
+    util::LockResultExt,
     CONFIG, SECTION_COUNT,
 };
 
@@ -203,7 +203,7 @@ fn handle_chunk(
                         saved = false;
                         let chunk = gen_chunk(&worker.state, pos);
                         let chunk_clone = chunk.clone();
-                        let pos_clone = pos.clone();
+                        let pos_clone = pos;
                         let settings = worker.state.settings.clone();
                         tokio::task::Builder::new().spawn_blocking(move || {
                             save_chunk_to_region(chunk_clone, pos_clone, settings).unwrap()
@@ -215,7 +215,7 @@ fn handle_chunk(
                 saved = false;
                 let chunk = gen_chunk(&worker.state, pos);
                 let chunk_clone = chunk.clone();
-                let pos_clone = pos.clone();
+                let pos_clone = pos;
                 let settings = worker.state.settings.clone();
                 tokio::task::Builder::new().spawn_blocking(move || {
                     save_chunk_to_region(chunk_clone, pos_clone, settings).unwrap()
@@ -245,7 +245,7 @@ fn handle_chunk(
 }
 
 #[inline]
-pub fn gen_chunk(state: &ChunkWorkerState, pos: ChunkPos) -> Chunk {
+#[must_use] pub fn gen_chunk(state: &ChunkWorkerState, pos: ChunkPos) -> Chunk {
     let mut chunk = Chunk::new(SECTION_COUNT);
 
     let range = 0..16;
@@ -262,7 +262,7 @@ pub fn gen_chunk(state: &ChunkWorkerState, pos: ChunkPos) -> Chunk {
 }
 
 #[inline]
-pub fn gen_chunk_fors(state: &ChunkWorkerState, pos: ChunkPos) -> Chunk {
+#[must_use] pub fn gen_chunk_fors(state: &ChunkWorkerState, pos: ChunkPos) -> Chunk {
     let mut chunk = Chunk::new(SECTION_COUNT);
 
     for offset_z in 0..16 {

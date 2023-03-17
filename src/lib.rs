@@ -7,7 +7,8 @@
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
-    clippy::let_underscore_untyped
+    clippy::let_underscore_untyped,
+    clippy::similar_names
 )]
 
 pub mod config;

@@ -1,6 +1,5 @@
 use bevy::{
     prelude::{Plugin, Query},
-    window::Window,
 };
 use valence::{
     client::event::{ChatMessage, CommandExecution},
@@ -135,7 +134,7 @@ pub fn gui_chat_window(
     egui::Window::new("Chat")
         .resizable(true)
         .collapsible(true)
-        .show(&egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut(), |ui| {
             ui.horizontal(|row| {
                 row.label("Total amount of messages:");
                 row.label(format!("{}", messages.0.len()));
