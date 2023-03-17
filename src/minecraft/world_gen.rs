@@ -163,7 +163,7 @@ fn setup(world: &mut World) {
     });
 
     if regions_empty {
-        overwrite_regions(&chunks);
+        overwrite_regions(&chunks, state.settings.clone());
     }
 
     drop(chunks);

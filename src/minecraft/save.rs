@@ -17,11 +17,13 @@ use valence::{
 };
 use walkdir::WalkDir;
 
+use super::world_gen::chunk_worker::TerrainSettings;
 use crate::{REGION_SIZE, SECTION_COUNT};
 
 #[derive(PartialEq, Debug, serde::Deserialize, serde::Serialize)]
 pub struct Region {
     pos: (i64, i64),
+    settings: TerrainSettings,
     chunks: Vec<SaveChunk>,
 }
 
@@ -65,7 +67,7 @@ pub fn chunkpos_to_regionpos(pos: &ChunkPos) -> (i64, i64) {
     (rpos_x, rpos_z)
 }
 
-pub fn overwrite_regions(chunks: &Vec<(ChunkPos, Chunk)>) -> Result<()> {
+pub fn overwrite_regions(chunks: &Vec<(ChunkPos, Chunk)>, settings: TerrainSettings) -> Result<()> {
     let mut regions = HashMap::new();
 
     for (pos, chunk) in chunks {
@@ -76,6 +78,7 @@ pub fn overwrite_regions(chunks: &Vec<(ChunkPos, Chunk)>) -> Result<()> {
             None => {
                 let region = Region {
                     pos: (rpos_x, rpos_z),
+                    settings: settings.clone(),
                     chunks: vec![],
                 };
                 regions.insert((rpos_x, rpos_z), region);
@@ -108,12 +111,13 @@ pub fn overwrite_regions(chunks: &Vec<(ChunkPos, Chunk)>) -> Result<()> {
     Result::Ok(())
 }
 
-pub fn save_chunk_to_region(chunk: Chunk, pos: ChunkPos) -> Result<()> {
+pub fn save_chunk_to_region(chunk: Chunk, pos: ChunkPos, settings: TerrainSettings) -> Result<()> {
     let rpos = chunkpos_to_regionpos(&pos);
-    let mut region = match load_region(rpos) {
+    let mut region = match load_region(rpos, &settings) {
         Ok(r) => r,
         Err(_) => Region {
             pos: rpos,
+            settings,
             chunks: vec![],
         },
     };
@@ -152,7 +156,7 @@ pub fn save_chunk_to_region(chunk: Chunk, pos: ChunkPos) -> Result<()> {
     Result::Ok(())
 }
 
-pub fn load_region(pos: (i64, i64)) -> Result<Region> {
+pub fn load_region(pos: (i64, i64), settings: &TerrainSettings) -> Result<Region> {
     let base_path = std::env::current_dir()?.join("world");
     let path = base_path.join(format!("{}_{}.region", pos.0, pos.1));
 
@@ -161,7 +165,11 @@ pub fn load_region(pos: (i64, i64)) -> Result<Region> {
     file.read_to_end(&mut buf);
 
     let region: Region = bincode::deserialize(&buf)?;
-    Result::Ok(region)
+    if &region.settings == settings {
+        Result::Ok(region)
+    } else {
+        Result::Err(anyhow::anyhow!("Terrain Settings don't match"))
+    }
 }
 
 pub fn load_regions() -> Result<Vec<Region>> {
@@ -179,7 +187,7 @@ pub fn load_regions() -> Result<Vec<Region>> {
                 file.read_to_end(&mut buf);
 
                 let region: Region = bincode::deserialize(&buf)?;
-                trace!(target: "minecraft::save", "laoded region {:?}", region.pos);
+                trace!(target: "minecraft::save", "loaded region {:?}", region.pos);
 
                 regions.push(region);
             }

@@ -41,7 +41,7 @@ pub enum WorkerResponse {
     TerrainSettingsSet,
 }
 
-#[derive(Debug, Clone, Resource, Reflect)]
+#[derive(Debug, Clone, Resource, Reflect, serde::Deserialize, serde::Serialize, PartialEq)]
 #[reflect(Resource)]
 pub struct TerrainSettings {
     pub enable_gravel: bool,
@@ -73,7 +73,9 @@ impl Default for TerrainSettings {
     }
 }
 
-#[derive(Debug, Default, Clone, Resource, Reflect)]
+#[derive(
+    Debug, Default, Clone, Resource, Reflect, serde::Deserialize, serde::Serialize, PartialEq,
+)]
 #[reflect(Resource)]
 pub struct FBMSettings {
     pub point_scaleing: f64,
@@ -191,7 +193,7 @@ fn handle_chunk(
         saved = true;
     } else {
         chunk = {
-            if let Ok(region) = load_region(chunkpos_to_regionpos(&pos)) {
+            if let Ok(region) = load_region(chunkpos_to_regionpos(&pos), &worker.state.settings) {
                 match region.chunk(pos) {
                     Some(c) => {
                         saved = true;
@@ -202,8 +204,9 @@ fn handle_chunk(
                         let chunk = gen_chunk(&worker.state, pos);
                         let chunk_clone = chunk.clone();
                         let pos_clone = pos.clone();
+                        let settings = worker.state.settings.clone();
                         tokio::task::Builder::new().spawn_blocking(move || {
-                            save_chunk_to_region(chunk_clone, pos_clone).unwrap()
+                            save_chunk_to_region(chunk_clone, pos_clone, settings).unwrap()
                         });
                         chunk
                     }
@@ -213,8 +216,10 @@ fn handle_chunk(
                 let chunk = gen_chunk(&worker.state, pos);
                 let chunk_clone = chunk.clone();
                 let pos_clone = pos.clone();
-                tokio::task::Builder::new()
-                    .spawn_blocking(move || save_chunk_to_region(chunk_clone, pos_clone).unwrap());
+                let settings = worker.state.settings.clone();
+                tokio::task::Builder::new().spawn_blocking(move || {
+                    save_chunk_to_region(chunk_clone, pos_clone, settings).unwrap()
+                });
                 chunk
             }
         };
