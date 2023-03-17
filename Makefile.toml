@@ -19,6 +19,14 @@ args = ["r", "-r"]
 command = "cargo"
 args = ["check"]
 
+[tasks.clippy]
+command = "cargo"
+args = ["clippy"]
+
+[tasks.clippy_fix]
+command = "cargo"
+args = ["clippy", "--fix"]
+
 [tasks.no_gui]
 command = "cargo"
 args = ["run", "-r", "--no-default-features", "--features", "minecraft"]
