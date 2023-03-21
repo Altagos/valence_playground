@@ -1,3 +1,5 @@
+mod chunk;
+
 use std::{
     collections::HashMap,
     fs::OpenOptions as StdOpenOptions,
@@ -5,25 +7,29 @@ use std::{
 };
 
 use anyhow::Result;
-use itertools::iproduct;
 use tokio::{
     fs::{self, OpenOptions},
     io::AsyncWriteExt,
 };
-use valence::{
-    prelude::{BlockState, Chunk},
-    view::ChunkPos,
-};
+use valence::{prelude::Chunk, view::ChunkPos};
 use walkdir::WalkDir;
 
+pub use self::chunk::*;
 use super::world_gen::chunk_worker::TerrainSettings;
-use crate::{REGION_SIZE, SECTION_COUNT};
+use crate::REGION_SIZE;
 
 #[derive(PartialEq, Debug, serde::Deserialize, serde::Serialize)]
 pub struct Region {
     pos: (i64, i64),
     settings: TerrainSettings,
     chunks: Vec<SaveChunk>,
+}
+
+impl IntoIterator for Region {
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+    type Item = SaveChunk;
+
+    fn into_iter(self) -> Self::IntoIter { self.chunks.into_iter() }
 }
 
 impl Region {
@@ -46,20 +52,6 @@ impl Region {
             None => None,
         }
     }
-}
-
-#[derive(PartialEq, Debug, serde::Deserialize, serde::Serialize)]
-pub struct SaveChunk {
-    pos: (i32, i32),
-    blocks: Vec<Block>,
-}
-
-#[derive(PartialEq, Debug, serde::Deserialize, serde::Serialize)]
-pub struct Block {
-    x: usize,
-    y: usize,
-    z: usize,
-    kind: u16,
 }
 
 #[must_use]
@@ -240,74 +232,4 @@ pub fn load_chunk(pos: &ChunkPos) -> Result<Chunk> {
     let save_chunk: SaveChunk = bincode::deserialize(&buf)?;
 
     Result::Ok(Chunk::from(save_chunk))
-}
-
-impl From<SaveChunk> for Chunk {
-    fn from(value: SaveChunk) -> Self {
-        let mut chunk = Chunk::new(SECTION_COUNT);
-
-        value.blocks.iter().for_each(|c| {
-            chunk.set_block_state(c.x, c.y, c.z, BlockState::from_raw(c.kind).unwrap());
-        });
-
-        chunk
-    }
-}
-
-impl From<&SaveChunk> for Chunk {
-    fn from(value: &SaveChunk) -> Self {
-        let mut chunk = Chunk::new(SECTION_COUNT);
-
-        value.blocks.iter().for_each(|c| {
-            chunk.set_block_state(c.x, c.y, c.z, BlockState::from_raw(c.kind).unwrap());
-        });
-
-        chunk
-    }
-}
-
-impl From<Chunk> for SaveChunk {
-    fn from(value: Chunk) -> Self {
-        let mut save_chunk = SaveChunk {
-            pos: (0, 0),
-            blocks: Vec::new(),
-        };
-
-        for (offset_z, offset_x) in iproduct!(0..16, 0..16) {
-            for y in (0..value.section_count() * 16).rev() {
-                let block = value.block_state(offset_x, y, offset_z);
-                save_chunk.blocks.push(Block {
-                    x: offset_x,
-                    y,
-                    z: offset_z,
-                    kind: block.to_raw(),
-                })
-            }
-        }
-
-        save_chunk
-    }
-}
-
-impl From<&Chunk> for SaveChunk {
-    fn from(value: &Chunk) -> Self {
-        let mut save_chunk = SaveChunk {
-            pos: (0, 0),
-            blocks: Vec::new(),
-        };
-
-        for (offset_z, offset_x) in iproduct!(0..16, 0..16) {
-            for y in (0..value.section_count() * 16).rev() {
-                let block = value.block_state(offset_x, y, offset_z);
-                save_chunk.blocks.push(Block {
-                    x: offset_x,
-                    y,
-                    z: offset_z,
-                    kind: block.to_raw(),
-                })
-            }
-        }
-
-        save_chunk
-    }
 }
